@@ -40,7 +40,7 @@ def test_signup_duplicate_email():
     
     # Second signup should fail
     res = client.post("/api/auth/signup", json=signup_data)
-    assert res.status_code == 400
+    assert res.status_code == 409
     assert "already exists" in res.json()["detail"].lower()
 
 def test_login_invalid_password():
