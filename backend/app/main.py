@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from .database import engine, Base, request_id_var
 from .routers import auth, catalog, brand, conversations, webhooks, health, analytics
@@ -38,6 +39,58 @@ app = FastAPI(
     version="2.0",
     lifespan=lifespan
 )
+
+def contains_null_byte(val) -> bool:
+    if isinstance(val, str):
+        return "\x00" in val
+    elif isinstance(val, dict):
+        return any(contains_null_byte(v) for v in val.values()) or any(contains_null_byte(k) for k in val.keys())
+    elif isinstance(val, list):
+        return any(contains_null_byte(item) for item in val)
+    return False
+
+@app.middleware("http")
+async def block_null_bytes(request: Request, call_next):
+    # Check path and query parameters for NUL characters (including URL-decoded)
+    import urllib.parse
+    decoded_path = urllib.parse.unquote(request.url.path)
+    decoded_query = urllib.parse.unquote(request.url.query)
+    if "\x00" in decoded_path or "\x00" in decoded_query:
+        return JSONResponse(status_code=400, content={"detail": "NUL characters are not allowed"})
+        
+    # Check headers
+    for key, val in request.headers.items():
+        if "\x00" in val:
+            return JSONResponse(status_code=400, content={"detail": "NUL characters are not allowed"})
+
+    # Check request body if not a multipart file upload
+    content_type = request.headers.get("content-type", "")
+    if "multipart/form-data" not in content_type:
+        body = await request.body()
+        if b"\x00" in body:
+            return JSONResponse(status_code=400, content={"detail": "NUL characters are not allowed"})
+            
+        # Parse JSON-escaped NULs
+        if "application/json" in content_type and body:
+            try:
+                import json
+                parsed = json.loads(body)
+                if contains_null_byte(parsed):
+                    return JSONResponse(status_code=400, content={"detail": "NUL characters are not allowed"})
+            except Exception:
+                pass
+                
+        # Parse form-urlencoded escaped NULs
+        if "application/x-www-form-urlencoded" in content_type and body:
+            try:
+                parsed_str = body.decode("utf-8", errors="ignore")
+                decoded_str = urllib.parse.unquote(parsed_str)
+                if "\x00" in decoded_str:
+                    return JSONResponse(status_code=400, content={"detail": "NUL characters are not allowed"})
+            except Exception:
+                pass
+
+    return await call_next(request)
 
 @app.middleware("http")
 async def add_correlation_id(request: Request, call_next):

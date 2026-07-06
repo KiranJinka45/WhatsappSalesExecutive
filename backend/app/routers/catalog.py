@@ -6,7 +6,7 @@ from ..database import get_db, SessionLocal
 from .. import models, schemas, security, catalog_service
 from ..catalog_service import generate_product_embedding_task
 
-router = APIRouter(prefix="/api/catalog", tags=["catalog"])
+router = APIRouter(prefix="/api/catalog", tags=["catalog"], responses={401: {"description": "Unauthorized"}, 400: {"description": "Bad Request"}})
 
 @router.post("/upload", status_code=status.HTTP_200_OK)
 async def upload_catalog(
@@ -136,7 +136,7 @@ def create_product(
     background_tasks.add_task(generate_product_embedding_task, SessionLocal, str(new_prod.id))
     return new_prod
 
-@router.put("/products/{id}", response_model=schemas.ProductOut)
+@router.put("/products/{id}", response_model=schemas.ProductOut, responses={404: {"description": "Product not found"}})
 def update_product(
     id: str,
     product_in: schemas.ProductUpdate,
@@ -181,7 +181,7 @@ def update_product(
     background_tasks.add_task(generate_product_embedding_task, SessionLocal, str(product.id))
     return product
 
-@router.delete("/products/{id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/products/{id}", status_code=status.HTTP_204_NO_CONTENT, responses={404: {"description": "Product not found"}})
 def delete_product(
     id: str,
     db: Session = Depends(get_db),

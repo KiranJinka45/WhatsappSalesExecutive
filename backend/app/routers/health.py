@@ -20,7 +20,7 @@ def liveness():
     """
     return {"status": "alive"}
 
-@router.get("/readiness")
+@router.get("/readiness", responses={503: {"description": "Service Unavailable"}})
 def readiness():
     """
     Checks database and Redis connectivity to determine if requests can be served.
@@ -53,7 +53,7 @@ def readiness():
         return JSONResponse(status_code=status.HTTP_200_OK, content={"status": "ready", "checks": checks})
     return JSONResponse(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content={"status": "not_ready", "checks": checks})
 
-@router.get("/dependencies")
+@router.get("/dependencies", responses={503: {"description": "Service Unavailable"}})
 def dependencies():
     """
     Checks third-party configuration and APIs (e.g. Gemini API setup).
@@ -74,7 +74,7 @@ def health_check():
 
 
 
-@router.get("/metrics")
+@router.get("/metrics", responses={401: {"description": "Unauthorized"}})
 def health_metrics(
     db: Session = Depends(get_db),
     org: models.Organization = Depends(security.get_current_org),

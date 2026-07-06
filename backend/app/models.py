@@ -103,6 +103,8 @@ class Message(Base):
     message_type = Column(String(50), default="text")  # 'text', 'image', 'video', 'interactive'
     content = Column(Text, nullable=False)
     media_url = Column(Text, nullable=True)
+    status = Column(String(50), default="sent", server_default="sent")  # 'pending', 'sent', 'failed'
+    error_message = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     conversation = relationship("Conversation", back_populates="messages")

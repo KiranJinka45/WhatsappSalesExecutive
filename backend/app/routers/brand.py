@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from .. import models, schemas, security
 
-router = APIRouter(prefix="/api/brand", tags=["brand"])
+router = APIRouter(prefix="/api/brand", tags=["brand"], responses={401: {"description": "Unauthorized"}, 400: {"description": "Bad Request"}})
 
 @router.get("/profile", response_model=schemas.OrganizationOut)
 def get_brand_profile(org: models.Organization = Depends(security.get_current_org)):

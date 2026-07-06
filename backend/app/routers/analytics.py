@@ -7,7 +7,7 @@ from sqlalchemy import func
 from ..database import get_db
 from .. import models, security
 
-router = APIRouter(prefix="/api/analytics", tags=["analytics"])
+router = APIRouter(prefix="/api/analytics", tags=["analytics"], responses={401: {"description": "Unauthorized"}})
 
 
 @router.get("/dashboard")
