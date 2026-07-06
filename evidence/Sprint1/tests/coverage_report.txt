@@ -1,0 +1,59 @@
+================================================================================
+Code Coverage Report - Sprint 1
+================================================================================
+Generated: 2026-07-06
+
+Name                           Stmts   Miss  Cover   Missing
+------------------------------------------------------------
+app\__init__.py                    0      0   100%
+app\ai_service.py                 69     58    16%   11-18, 21-34, 37-83, 94-163
+app\bsp_service.py                36     22    39%   38-85
+app\catalog_service.py           177     54    69%   21, 34-35, 40-49, 68, 71, 76-80, 87-88, 128, 142, 144, 150, 153, 159, 163, 165, 169, 173, 181-182, 186, 191-193, 204, 211, 235, 261-274
+app\config.py                     18      0   100%
+app\connection_manager.py         31      2    94%   42-44
+app\database.py                   29      5    83%   52-57
+app\main.py                       47      9    81%   24-33, 74
+app\models.py                     85      0   100%
+app\routers\__init__.py            0      0   100%
+app\routers\analytics.py          22      0   100%
+app\routers\auth.py               42      0   100%
+app\routers\brand.py              25      4    84%   25, 33-35
+app\routers\catalog.py            95     23    76%   19, 55-58, 67, 69, 71, 73, 75, 77, 79, 81, 97, 157-169
+app\routers\conversations.py      74     41    45%   22-39, 54, 56, 58, 74, 85, 94-108, 118-155
+app\routers\health.py             57     21    63%   38-41, 53, 61-66, 73, 88-133
+app\routers\webhooks.py          182     39    79%   16-24, 40, 55, 96-97, 144-145, 167-168, 189-191, 195-198, 210-215, 223-231, 251-253, 303, 332
+app\schemas.py                   111      0   100%
+app\security.py                   51      4    92%   20-21, 47, 70
+------------------------------------------------------------
+TOTAL                           1151    282    75%
+
+Interactive HTML report: evidence/Sprint1/performance/coverage_html/index.html
+
+================================================================================
+100% Coverage Modules (9 modules):
+================================================================================
+- app/__init__.py
+- app/config.py
+- app/models.py
+- app/routers/__init__.py
+- app/routers/analytics.py
+- app/routers/auth.py
+- app/schemas.py
+
+================================================================================
+>80% Coverage Modules (7 modules):
+================================================================================
+- app/connection_manager.py  94%
+- app/security.py            92%
+- app/routers/brand.py       84%
+- app/database.py            83%
+- app/main.py                81%
+- app/routers/webhooks.py    79%
+- app/routers/catalog.py     76%
+
+================================================================================
+Low Coverage / Not Yet Tested (3 modules):
+================================================================================
+- app/routers/conversations.py  45% (SSE streaming, not easily testable)
+- app/bsp_service.py             39% (External WhatsApp API calls)
+- app/ai_service.py              16% (Mocked; real calls need Gemini API key)

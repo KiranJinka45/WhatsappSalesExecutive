@@ -1,0 +1,31 @@
+================================================================================
+Ruff Static Code Analysis Report
+================================================================================
+Command: ruff check app/
+Result: All checks passed! 0 errors.
+
+================================================================================
+Bandit Security AST Scanner Report
+================================================================================
+Command: bandit -r app/
+Run started: 2026-07-06 03:24:36.586917
+
+Test results:
+	No issues identified.
+
+Code scanned:
+	Total lines of code: 1737
+	Total lines skipped (#nosec): 0
+
+Run metrics:
+	Total issues (by severity):
+		Undefined: 0
+		Low: 0
+		Medium: 0
+		High: 0
+	Total issues (by confidence):
+		Undefined: 0
+		Low: 0
+		Medium: 0
+		High: 0
+================================================================================

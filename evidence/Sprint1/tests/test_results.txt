@@ -1,0 +1,47 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.13, pytest-8.2.2, pluggy-1.6.0
+rootdir: C:\whatsapp_AI Sales Employee\backend
+plugins: anyio-4.14.1, cov-5.0.0
+collected 39 items
+
+tests/test_01_auth.py::test_signup_valid_user PASSED                     [  2%]
+tests/test_01_auth.py::test_signup_duplicate_email PASSED                [  5%]
+tests/test_01_auth.py::test_login_invalid_password PASSED                [  7%]
+tests/test_01_auth.py::test_login_invalid_email PASSED                   [ 10%]
+tests/test_01_auth.py::test_get_current_user_profile PASSED              [ 12%]
+tests/test_02_catalog.py::test_catalog_invalid_csv_format PASSED         [ 15%]
+tests/test_02_catalog.py::test_catalog_upload_missing_fields PASSED      [ 17%]
+tests/test_02_catalog.py::test_catalog_get_nonexistent_product PASSED    [ 20%]
+tests/test_02_catalog.py::test_catalog_pagination PASSED                 [ 23%]
+tests/test_02_catalog.py::test_catalog_update_product PASSED             [ 25%]
+tests/test_03_webhooks.py::test_whatsapp_webhook_verification PASSED     [ 28%]
+tests/test_03_webhooks.py::test_whatsapp_webhook_verification_invalid_token PASSED [ 30%]
+tests/test_03_webhooks.py::test_whatsapp_webhook_empty_payload PASSED    [ 33%]
+tests/test_03_webhooks.py::test_whatsapp_webhook_missing_messages PASSED [ 35%]
+tests/test_04_ai.py::test_intent_classification PASSED                   [ 38%]
+tests/test_04_ai.py::test_embedding_generation PASSED                    [ 41%]
+tests/test_04_ai.py::test_reply_generation PASSED                        [ 43%]
+tests/test_05_analytics.py::test_analytics_dashboard_empty PASSED        [ 46%]
+tests/test_05_analytics.py::test_analytics_dashboard_with_data PASSED    [ 48%]
+tests/test_06_health.py::test_health_liveness PASSED                     [ 51%]
+tests/test_06_health.py::test_health_readiness PASSED                    [ 53%]
+tests/test_auth_edge_cases.py::test_expired_jwt_rejection PASSED         [ 56%]
+tests/test_auth_edge_cases.py::test_malformed_jwt_rejection PASSED       [ 58%]
+tests/test_auth_edge_cases.py::test_missing_auth_header PASSED           [ 61%]
+tests/test_auth_edge_cases.py::test_wrong_role_rejection PASSED          [ 64%]
+tests/test_auth_edge_cases.py::test_nonexistent_user_token_rejection PASSED [ 66%]
+tests/test_backend.py::TestCloselyBackend::test_brand_profile_and_policies PASSED [ 69%]
+tests/test_backend.py::TestCloselyBackend::test_catalog_csv_upload PASSED [ 71%]
+tests/test_backend.py::TestCloselyBackend::test_product_crud PASSED      [ 74%]
+tests/test_backend.py::TestCloselyBackend::test_simulated_whatsapp_webhook_flow PASSED [ 76%]
+tests/test_sprint2_gates.py::TestSprint2Gates::test_correlation_id_middleware PASSED [ 79%]
+tests/test_sprint2_gates.py::TestSprint2Gates::test_csv_upload_validation_edge_cases PASSED [ 82%]
+tests/test_sprint2_gates.py::TestSprint2Gates::test_jwt_tampering_and_expired_rejections PASSED [ 84%]
+tests/test_sprint2_gates.py::TestSprint2Gates::test_payment_webhook_flow PASSED [ 87%]
+tests/test_sprint2_gates.py::TestSprint2Gates::test_sse_connection_manager_broadcast PASSED [ 89%]
+tests/test_tenant_isolation.py::TestTenantIsolation::test_tenant_conversations_isolation PASSED [ 92%]
+tests/test_tenant_isolation.py::TestTenantIsolation::test_tenant_delete_isolation PASSED [ 94%]
+tests/test_tenant_isolation.py::TestTenantIsolation::test_tenant_read_isolation PASSED [ 97%]
+tests/test_tenant_isolation.py::TestTenantIsolation::test_tenant_write_isolation PASSED [100%]
+
+================= 39 passed, 38 warnings in 60.85s (0:01:00) ==================

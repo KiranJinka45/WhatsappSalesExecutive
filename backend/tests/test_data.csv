@@ -1,0 +1,6 @@
+sku,name,category,gender,price,color,fabric,description,sizes,stock count,image urls,video urls
+SKU001,Banarasi Silk Saree,Sarees,Women,4500.00,Black,Silk,Elegant black handwoven Banarasi silk saree with gold zari border.,"Free Size",10,https://example.com/saree-black.jpg,https://example.com/saree-black-video.mp4
+SKU002,Kanchipuram Silk Saree,Sarees,Women,8500.00,Red,Silk,Traditional red Kanchipuram silk saree with rich pallu.,"Free Size",5,https://example.com/saree-red.jpg,
+SKU003,Cotton Designer Kurta,Kurtas,Women,1200.00,Blue,Cotton,Casual blue printed designer cotton kurti for daily wear.,"S, M, L, XL",25,https://example.com/kurti-blue.jpg,
+SKU004,Linen Summer Shirt,Shirts,Men,1800.00,White,Linen,Premium white breathable linen shirt for summers.,"M, L, XL",15,https://example.com/shirt-white.jpg,
+SKU005,Chiffon Party Wear Saree,Sarees,Women,3500.00,Blue,Chiffon,Beautiful blue chiffon party wear saree with sequin work.,"Free Size",8,https://example.com/saree-blue-chiffon.jpg,
