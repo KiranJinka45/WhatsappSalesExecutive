@@ -9,7 +9,7 @@ from ..database import get_db
 from .. import models, schemas, security
 from ..connection_manager import manager
 
-router = APIRouter(prefix="/api/conversations", tags=["conversations"])
+router = APIRouter(prefix="/api/conversations", tags=["conversations"], responses={401: {"description": "Unauthorized"}, 400: {"description": "Bad Request"}})
 
 @router.get("/stream")
 async def stream_conversations(
@@ -59,7 +59,7 @@ def get_conversations(
 
     return query.order_by(models.Conversation.updated_at.desc()).offset(offset).limit(limit).all()
 
-@router.get("/{id}", response_model=schemas.ConversationDetail)
+@router.get("/{id}", response_model=schemas.ConversationDetail, responses={404: {"description": "Conversation not found"}})
 def get_conversation_detail(
     id: UUID,
     db: Session = Depends(get_db),
@@ -73,7 +73,7 @@ def get_conversation_detail(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
     return conv
 
-@router.post("/{id}/takeover", response_model=schemas.ConversationOut)
+@router.post("/{id}/takeover", response_model=schemas.ConversationOut, responses={404: {"description": "Conversation not found"}})
 def toggle_takeover(
     id: UUID,
     status_val: str = Query(..., description="ai_active, human_takeover, resolved"),
@@ -107,7 +107,7 @@ def toggle_takeover(
     })
     return conv
 
-@router.post("/{id}/messages", response_model=schemas.MessageOut, status_code=status.HTTP_201_CREATED)
+@router.post("/{id}/messages", response_model=schemas.MessageOut, status_code=status.HTTP_201_CREATED, responses={404: {"description": "Conversation not found"}})
 def send_agent_message(
     id: UUID,
     msg_in: schemas.MessageCreate,
@@ -144,12 +144,33 @@ def send_agent_message(
             "sender": new_msg.sender,
             "message_type": new_msg.message_type,
             "content": new_msg.content,
+            "status": new_msg.status,
+            "error_message": new_msg.error_message,
             "created_at": new_msg.created_at.isoformat()
         }
     })
     
     # Trigger real outbound BSP API payload dispatch
     from ..bsp_service import send_whatsapp_message
-    send_whatsapp_message(conv.customer_phone, msg_in.content, org)
+    send_whatsapp_res = send_whatsapp_message(conv.customer_phone, msg_in.content, org)
+    
+    if send_whatsapp_res.get("status") == "failed":
+        new_msg.status = "failed"
+        new_msg.error_message = send_whatsapp_res.get("error")
+        db.commit()
+        
+        # Broadcast updated failure status
+        manager.broadcast(str(org.id), "new_message", {
+            "conversation_id": str(conv.id),
+            "message": {
+                "id": str(new_msg.id),
+                "sender": new_msg.sender,
+                "message_type": new_msg.message_type,
+                "content": new_msg.content,
+                "status": "failed",
+                "error_message": new_msg.error_message,
+                "created_at": new_msg.created_at.isoformat()
+            }
+        })
     
     return new_msg

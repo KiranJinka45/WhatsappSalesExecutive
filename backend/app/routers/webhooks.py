@@ -9,7 +9,7 @@ from ..database import get_db, tenant_var, SessionLocal
 from .. import models, ai_service
 from ..config import settings
 
-router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
+router = APIRouter(prefix="/api/webhooks", tags=["webhooks"], responses={400: {"description": "Bad Request"}})
 logger = logging.getLogger(__name__)
 
 def verify_meta_signature(payload: bytes, signature_header: str, app_secret: str) -> bool:
@@ -44,128 +44,220 @@ def process_message_async(org_id: str, conv_id: str, message_text: str):
     Background task to process AI response asynchronously, 
     preventing Meta webhook timeouts.
     """
+    import time
+    max_retries = 3
+    retry_delay = 1.0
+    last_exception = None
+
     db = SessionLocal()
     db.organization_id = org_id
-    # Set tenant context for this background thread
     token = tenant_var.set(org_id)
+    
     try:
-        # Load conversation
         conv = db.query(models.Conversation).filter(models.Conversation.id == conv_id).first()
         if not conv or conv.status != "ai_active":
+            db.close()
+            tenant_var.reset(token)
             return
-            
-        # Fetch last 10 messages for conversational context
-        msg_history = db.query(models.Message).filter(
-            models.Message.conversation_id == conv.id
-        ).order_by(models.Message.created_at.asc()).limit(10).all()
-        
-        history_list = [{"sender": m.sender, "content": m.content} for m in msg_history]
-        
-        # Intent Classification
-        intent = ai_service.classify_intent(message_text, history_list)
-        logger.info(f"Classified intent for conversation {conv_id}: {intent}")
-        
-        # Human Escalation Trigger
-        if intent == "human_negotiation":
-            conv.status = "human_takeover"
-            db.commit()
-            
-            # Log AI Handoff notification message
-            handoff_msg = models.Message(
+    except Exception as e:
+        logger.error(f"Failed to load conversation: {e}", exc_info=True)
+        last_exception = e
+
+    if last_exception is None:
+        for attempt in range(max_retries):
+            try:
+                if attempt > 0:
+                    db.close()
+                    db = SessionLocal()
+                    db.organization_id = org_id
+                    tenant_var.set(org_id)
+                    conv = db.query(models.Conversation).filter(models.Conversation.id == conv_id).first()
+                    if not conv or conv.status != "ai_active":
+                        break
+
+                # Fetch last 10 messages for conversational context
+                msg_history = db.query(models.Message).filter(
+                    models.Message.conversation_id == conv.id
+                ).order_by(models.Message.created_at.asc()).limit(10).all()
+                
+                history_list = [{"sender": m.sender, "content": m.content} for m in msg_history]
+                
+                # Intent Classification
+                intent = ai_service.classify_intent(message_text, history_list)
+                logger.info(f"Classified intent for conversation {conv_id}: {intent}")
+                
+                # Human Escalation Trigger
+                if intent == "human_negotiation":
+                    conv.status = "human_takeover"
+                    db.commit()
+                    
+                    # Log AI Handoff notification message
+                    handoff_msg = models.Message(
+                        conversation_id=conv.id,
+                        sender="ai",
+                        message_type="text",
+                        content="[System Note: Customer requested wholesale/negotiation. Silent escalation triggered.]",
+                        status="sent"
+                    )
+                    db.add(handoff_msg)
+                    db.commit()
+                    db.close()
+                    tenant_var.reset(token)
+                    return
+
+                # Context retrieval initialization
+                catalog_context = []
+                org_token = tenant_var.set(None)
+                db.organization_id = None
+                try:
+                    org = db.query(models.Organization).filter(models.Organization.id == org_id).first()
+                finally:
+                    tenant_var.reset(org_token)
+                    db.organization_id = org_id
+                    
+                if not org:
+                    logger.error(f"Organization {org_id} not found in async task.")
+                    break
+
+                # Semantic Search Context Retrieval
+                if intent in ["product_discovery", "similar_recommendation", "product_info", "availability"]:
+                    query_embedding = ai_service.get_embedding(message_text)
+                    catalog_matches = db.query(models.Product).order_by(
+                        models.Product.embedding.cosine_distance(query_embedding)
+                    ).limit(5).all()
+                    
+                    catalog_context = [{
+                        "sku": p.sku,
+                        "name": p.name,
+                        "price": float(p.price),
+                        "color": p.color,
+                        "fabric": p.fabric,
+                        "sizes": p.sizes,
+                        "stock_count": p.stock_count,
+                        "description": p.description,
+                        "image_urls": p.image_urls,
+                        "video_urls": p.video_urls
+                    } for p in catalog_matches]
+
+                # Generate grounded reply
+                policies_context = org.policies or {}
+                ai_reply = ai_service.generate_reply(message_text, history_list, catalog_context, policies_context)
+
+                # Log AI message
+                ai_msg = models.Message(
+                    conversation_id=conv.id,
+                    sender="ai",
+                    message_type="text",
+                    content=ai_reply,
+                    status="sent"
+                )
+                db.add(ai_msg)
+                
+                # Update conversation metadata with preferences/budget tracking
+                meta = dict(conv.metadata_ or {})
+                if "under" in message_text.lower():
+                     words = message_text.lower().split()
+                     for i, w in enumerate(words):
+                          if w == "under" and i+1 < len(words):
+                               try:
+                                   clean_price = "".join([c for c in words[i+1] if c.isdigit()])
+                                   if clean_price:
+                                       meta["budget_limit"] = int(clean_price)
+                               except ValueError:
+                                   pass
+                conv.metadata_ = meta
+                db.commit()
+                db.refresh(ai_msg)
+                
+                # Broadcast AI response to connected merchant streams
+                from ..connection_manager import manager
+                manager.broadcast(org_id, "new_message", {
+                    "conversation_id": str(conv.id),
+                    "message": {
+                        "id": str(ai_msg.id),
+                        "sender": ai_msg.sender,
+                        "message_type": ai_msg.message_type,
+                        "content": ai_msg.content,
+                        "status": ai_msg.status,
+                        "error_message": ai_msg.error_message,
+                        "created_at": ai_msg.created_at.isoformat()
+                    }
+                })
+                
+                # Trigger real outbound BSP API payload dispatch
+                from ..bsp_service import send_whatsapp_message
+                send_whatsapp_res = send_whatsapp_message(conv.customer_phone, ai_reply, org)
+                
+                if send_whatsapp_res.get("status") == "failed":
+                    ai_msg.status = "failed"
+                    ai_msg.error_message = send_whatsapp_res.get("error")
+                    db.commit()
+                    manager.broadcast(org_id, "new_message", {
+                        "conversation_id": str(conv.id),
+                        "message": {
+                            "id": str(ai_msg.id),
+                            "sender": ai_msg.sender,
+                            "message_type": ai_msg.message_type,
+                            "content": ai_msg.content,
+                            "status": "failed",
+                            "error_message": ai_msg.error_message,
+                            "created_at": ai_msg.created_at.isoformat()
+                        }
+                    })
+                    logger.error(f"Outbound WhatsApp send failed: {send_whatsapp_res.get('error')}")
+                else:
+                    logger.info(f"Generated and sent reply: '{ai_reply}' for customer: {conv.customer_phone}")
+                
+                db.close()
+                tenant_var.reset(token)
+                return
+
+            except Exception as e:
+                logger.warning(f"Attempt {attempt + 1} failed in process_message_async: {e}")
+                last_exception = e
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                    retry_delay *= 2.0
+
+    # Persistent failure handling
+    logger.error(f"Persistent failure in async message processing: {last_exception}", exc_info=True)
+    try:
+        try:
+            db.close()
+        except Exception:
+            pass
+        db = SessionLocal()
+        db.organization_id = org_id
+        tenant_var.set(org_id)
+        conv = db.query(models.Conversation).filter(models.Conversation.id == conv_id).first()
+        if conv:
+            failed_msg = models.Message(
                 conversation_id=conv.id,
                 sender="ai",
                 message_type="text",
-                content="[System Note: Customer requested wholesale/negotiation. Silent escalation triggered.]"
+                content="System Error: Failed to generate reply.",
+                status="failed",
+                error_message=str(last_exception)
             )
-            db.add(handoff_msg)
+            db.add(failed_msg)
             db.commit()
-            return
-
-        # Context retrieval initialization
-        catalog_context = []
-        # Temporarily unset tenant_var to fetch the org since the org table itself doesn't have organization_id
-        org_token = tenant_var.set(None)
-        db.organization_id = None
-        try:
-            org = db.query(models.Organization).filter(models.Organization.id == org_id).first()
-        finally:
-            tenant_var.reset(org_token)
-            db.organization_id = org_id
+            db.refresh(failed_msg)
             
-        if not org:
-            logger.error(f"Organization {org_id} not found in async task.")
-            return
-
-        # Semantic Search Context Retrieval
-        if intent in ["product_discovery", "similar_recommendation", "product_info", "availability"]:
-            # Query embedding representation of message
-            query_embedding = ai_service.get_embedding(message_text)
-            # Search Top 5 most similar products (Tenant filtering is automatic)
-            catalog_matches = db.query(models.Product).order_by(
-                models.Product.embedding.cosine_distance(query_embedding)
-            ).limit(5).all()
-            
-            catalog_context = [{
-                "sku": p.sku,
-                "name": p.name,
-                "price": float(p.price),
-                "color": p.color,
-                "fabric": p.fabric,
-                "sizes": p.sizes,
-                "stock_count": p.stock_count,
-                "description": p.description,
-                "image_urls": p.image_urls,
-                "video_urls": p.video_urls
-            } for p in catalog_matches]
-
-        # Generate grounded reply
-        policies_context = org.policies or {}
-        ai_reply = ai_service.generate_reply(message_text, history_list, catalog_context, policies_context)
-
-        # Log AI message
-        ai_msg = models.Message(
-            conversation_id=conv.id,
-            sender="ai",
-            message_type="text",
-            content=ai_reply
-        )
-        db.add(ai_msg)
-        
-        # Update conversation metadata with preferences/budget tracking
-        meta = conv.metadata_ or {}
-        if "under" in message_text.lower():
-             words = message_text.lower().split()
-             for i, w in enumerate(words):
-                  if w == "under" and i+1 < len(words):
-                       try:
-                           clean_price = "".join([c for c in words[i+1] if c.isdigit()])
-                           if clean_price:
-                               meta["budget_limit"] = int(clean_price)
-                       except ValueError:
-                           pass
-        db.commit()
-        db.refresh(ai_msg)
-        
-        # Broadcast AI response to connected merchant streams
-        from ..connection_manager import manager
-        manager.broadcast(org_id, "new_message", {
-            "conversation_id": str(conv.id),
-            "message": {
-                "id": str(ai_msg.id),
-                "sender": ai_msg.sender,
-                "message_type": ai_msg.message_type,
-                "content": ai_msg.content,
-                "created_at": ai_msg.created_at.isoformat()
-            }
-        })
-        
-        # Trigger real outbound BSP API payload dispatch (Epic 5)
-        from ..bsp_service import send_whatsapp_message
-        send_whatsapp_message(conv.customer_phone, ai_reply, org)
-        logger.info(f"Generated and sent reply: '{ai_reply}' for customer: {conv.customer_phone}")
-        
+            from ..connection_manager import manager
+            manager.broadcast(org_id, "new_message", {
+                "conversation_id": str(conv.id),
+                "message": {
+                    "id": str(failed_msg.id),
+                    "sender": failed_msg.sender,
+                    "message_type": failed_msg.message_type,
+                    "content": failed_msg.content,
+                    "status": "failed",
+                    "error_message": failed_msg.error_message,
+                    "created_at": failed_msg.created_at.isoformat()
+                }
+            })
     except Exception as e:
-        logger.error(f"Error in async message processing: {e}", exc_info=True)
+        logger.error(f"Failed to save background task error to database: {e}", exc_info=True)
     finally:
         db.close()
         tenant_var.reset(token)
@@ -314,7 +406,7 @@ class PaymentPayload(BaseModel):
     amount: float
     currency: str = "INR"
 
-@router.post("/payments")
+@router.post("/payments", responses={404: {"description": "Conversation not found"}})
 def receive_payment_webhook(payload: PaymentPayload, db: Session = Depends(get_db)):
     """
     Simulates payment gateway webhook ingestion.

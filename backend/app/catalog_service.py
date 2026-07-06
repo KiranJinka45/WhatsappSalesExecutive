@@ -1,11 +1,14 @@
 import csv
 import io
 import re
+import logging
 from sqlalchemy.orm import Session
 from decimal import Decimal
 from fastapi import BackgroundTasks
 from . import models
 from .database import SessionLocal, tenant_var
+
+logger = logging.getLogger(__name__)
 
 def generate_product_embedding_task(db_session_factory, product_id: str):
     """
@@ -37,8 +40,7 @@ def generate_product_embedding_task(db_session_factory, product_id: str):
             
         db.commit()
     except Exception as e:
-        import logging
-        logging.getLogger(__name__).error(f"Failed async embedding for product {product_id}: {e}")
+        logger.error(f"Failed async embedding for product {product_id}: {e}")
         try:
             product = db.query(models.Product).filter(models.Product.id == product_id).first()
             if product:
