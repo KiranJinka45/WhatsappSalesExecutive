@@ -55,5 +55,17 @@ services:
     maxmemoryPolicy: allkeys-lru
     ipAllowList: []
 
-
-
+  # --- Vite React Frontend (Static Site) ---
+  - type: web
+    name: closely-frontend
+    runtime: static
+    rootDir: ./frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: https://closely-backend.onrender.com

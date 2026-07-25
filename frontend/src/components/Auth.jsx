@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { apiFetch } from '../api';
 
-export default function Auth({ onLoginSuccess }) {
-  const [isSignup, setIsSignup] = useState(false);
+export default function Auth({ onLoginSuccess, initialMode = 'login', onBackToLanding }) {
+  const [isSignup, setIsSignup] = useState(initialMode === 'signup');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
@@ -9,17 +10,19 @@ export default function Auth({ onLoginSuccess }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    setIsSignup(initialMode === 'signup');
+  }, [initialMode]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
-    const baseUrl = 'http://localhost:8000';
-    
     try {
       if (isSignup) {
         // Signup
-        const signupResponse = await fetch(`${baseUrl}/api/auth/signup`, {
+        const signupResponse = await apiFetch('/api/auth/signup', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, name, password, organization_name: orgName }),
@@ -36,7 +39,7 @@ export default function Auth({ onLoginSuccess }) {
       formData.append('username', email);
       formData.append('password', password);
 
-      const loginResponse = await fetch(`${baseUrl}/api/auth/login`, {
+      const loginResponse = await apiFetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: formData.toString(),
@@ -47,9 +50,8 @@ export default function Auth({ onLoginSuccess }) {
         throw new Error(errData.detail || 'Invalid email or password.');
       }
 
-      const loginData = await loginResponse.json();
-      localStorage.setItem('token', loginData.access_token);
-      onLoginSuccess(loginData.access_token);
+      await loginResponse.json();
+      onLoginSuccess();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -59,11 +61,18 @@ export default function Auth({ onLoginSuccess }) {
 
   return (
     <div style={styles.container}>
+      <button 
+        style={styles.backBtn}
+        onClick={onBackToLanding}
+      >
+        &larr; Back to Home
+      </button>
+
       <div className="glass-panel" style={styles.card}>
         <div style={styles.header}>
           <div style={styles.logo}>🛒</div>
           <h2 style={styles.title}>
-            Closely <span className="gradient-text">AI</span>
+            Closely <span className="gradient-text" style={{ color: 'var(--accent-secondary)' }}>AI</span>
           </h2>
           <p style={styles.subtitle}>Your Autonomous AI Sales Employee</p>
         </div>
@@ -149,11 +158,30 @@ export default function Auth({ onLoginSuccess }) {
 const styles = {
   container: {
     display: 'flex',
+    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: '100vh',
     padding: '1.5rem',
-    background: 'radial-gradient(circle at top right, rgba(0, 240, 255, 0.05), transparent 40%), radial-gradient(circle at bottom left, rgba(255, 51, 102, 0.05), transparent 40%)',
+    background: 'radial-gradient(circle at top right, rgba(0, 240, 255, 0.03), transparent 40%), radial-gradient(circle at bottom left, rgba(255, 51, 102, 0.03), transparent 40%)',
+    backgroundColor: 'var(--bg-primary)',
+    position: 'relative',
+  },
+  backBtn: {
+    position: 'absolute',
+    top: '2rem',
+    left: '2rem',
+    background: 'none',
+    border: 'none',
+    color: 'var(--text-secondary)',
+    fontSize: '0.85rem',
+    fontWeight: '500',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.25rem',
+    transition: 'color 0.15s ease',
+    outline: 'none',
   },
   card: {
     width: '100%',

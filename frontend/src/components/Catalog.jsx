@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { apiFetch } from '../api';
 
 export default function Catalog({ token }) {
   const [products, setProducts] = useState([]);
@@ -18,21 +19,17 @@ export default function Catalog({ token }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const baseUrl = 'http://localhost:8000';
-
   useEffect(() => {
     fetchProducts();
   }, [searchQuery]);
 
   const fetchProducts = async () => {
     try {
-      const url = searchQuery 
-        ? `${baseUrl}/api/catalog/products?q=${encodeURIComponent(searchQuery)}`
-        : `${baseUrl}/api/catalog/products`;
+      const path = searchQuery 
+        ? `/api/catalog/products?q=${encodeURIComponent(searchQuery)}`
+        : '/api/catalog/products';
       
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await apiFetch(path);
       if (res.ok) {
         const data = await res.json();
         setProducts(data);
@@ -65,11 +62,10 @@ export default function Catalog({ token }) {
     };
 
     try {
-      const res = await fetch(`${baseUrl}/api/catalog/products`, {
+      const res = await apiFetch('/api/catalog/products', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify(payload)
       });
@@ -105,9 +101,8 @@ export default function Catalog({ token }) {
     formData.append('file', file);
 
     try {
-      const res = await fetch(`${baseUrl}/api/catalog/upload`, {
+      const res = await apiFetch('/api/catalog/upload', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
         body: formData
       });
 
@@ -130,9 +125,8 @@ export default function Catalog({ token }) {
   const handleDeleteProduct = async (id) => {
     if (!window.confirm("Are you sure you want to delete this product?")) return;
     try {
-      const res = await fetch(`${baseUrl}/api/catalog/products/${id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` }
+      const res = await apiFetch(`/api/catalog/products/${id}`, {
+        method: 'DELETE'
       });
       if (res.ok) {
         fetchProducts();

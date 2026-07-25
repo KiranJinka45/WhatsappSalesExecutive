@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { apiFetch } from '../api';
 
 export default function Settings({ token }) {
   const [name, setName] = useState('');
@@ -11,17 +12,13 @@ export default function Settings({ token }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const baseUrl = 'http://localhost:8000';
-
   useEffect(() => {
     fetchProfile();
   }, []);
 
   const fetchProfile = async () => {
     try {
-      const res = await fetch(`${baseUrl}/api/brand/profile`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await apiFetch('/api/brand/profile');
       if (res.ok) {
         const data = await res.json();
         setName(data.name);
@@ -54,11 +51,10 @@ export default function Settings({ token }) {
     };
 
     try {
-      const res = await fetch(`${baseUrl}/api/brand/profile`, {
+      const res = await apiFetch('/api/brand/profile', {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify(payload)
       });
