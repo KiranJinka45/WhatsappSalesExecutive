@@ -42,7 +42,10 @@ async def lifespan(app: FastAPI):
         print(f"Failed to create pgvector extension: {e}. If using SQLite, this is normal and will be skipped.")
 
     # Initialize Database tables
-    Base.metadata.create_all(bind=engine)
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception as e:
+        print(f"Failed to create database tables on startup: {e}. Tables may already exist in production (Supabase).")
     
     # Fail-safe to add detected_language column if it doesn't exist
     try:
@@ -53,15 +56,20 @@ async def lifespan(app: FastAPI):
         print(f"Altering messages table failed: {e}. If using SQLite or table already has the column, this is normal.")
 
     # Start Redis Worker in a daemon background thread for queue processing
-    import threading
-    from .worker import Worker
-    worker_instance = Worker()
-    worker_thread = threading.Thread(target=worker_instance.run, daemon=True)
-    worker_thread.start()
-    print("Started Closely AI Worker daemon thread in background.")
+    worker_instance = None
+    try:
+        import threading
+        from .worker import Worker
+        worker_instance = Worker()
+        worker_thread = threading.Thread(target=worker_instance.run, daemon=True)
+        worker_thread.start()
+        print("Started Closely AI Worker daemon thread in background.")
+    except Exception as e:
+        print(f"Failed to start background worker: {e}. Messages will be processed synchronously.")
         
     yield
-    worker_instance.running = False
+    if worker_instance:
+        worker_instance.running = False
 
 
 app = FastAPI(
