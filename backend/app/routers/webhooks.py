@@ -704,12 +704,12 @@ async def receive_whatsapp_message(
         }
     })
 
-    # Reopen closed conversations if customer messages again
-    if conv.status == "CLOSED":
+    # Reopen closed or owner-active conversations when customer messages again
+    if conv.status in ["CLOSED", "OWNER_ACTIVE"]:
         conv.status = "AI_ACTIVE"
         db.commit()
 
-    if conv.status in ["OWNER_ACTIVE", "WAITING_APPROVAL"]:
+    if conv.status == "WAITING_APPROVAL":
         return {"status": "forwarded_to_agent"}
 
     # Delegate LLM and database intensive work to Redis queue
