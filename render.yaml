@@ -1,0 +1,96 @@
+# Render Infrastructure-as-Code Blueprint
+# https://render.com/docs/blueprint-spec
+
+services:
+  # --- FastAPI Web Service (handles webhooks + API) ---
+  - type: web
+    name: closely-backend
+    runtime: python
+    region: oregon
+    plan: free
+    rootDir: ./backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL
+        fromGroup: closely-secrets
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: closely-redis
+          property: connectionString
+      - key: JWT_SECRET
+        fromGroup: closely-secrets
+      - key: GEMINI_API_KEY
+        fromGroup: closely-secrets
+      - key: GROQ_API_KEY
+        fromGroup: closely-secrets
+      - key: OPENROUTER_API_KEY
+        fromGroup: closely-secrets
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        fromGroup: closely-secrets
+      - key: WHATSAPP_ACCESS_TOKEN
+        fromGroup: closely-secrets
+      - key: WHATSAPP_APP_SECRET
+        fromGroup: closely-secrets
+      - key: WHATSAPP_VERIFY_TOKEN
+        fromGroup: closely-secrets
+      - key: SUPABASE_URL
+        fromGroup: closely-secrets
+      - key: SUPABASE_ANON_KEY
+        fromGroup: closely-secrets
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        fromGroup: closely-secrets
+
+  # --- Background Worker (processes AI responses from Redis queue) ---
+  - type: worker
+    name: closely-worker
+    runtime: python
+    region: oregon
+    plan: free
+    rootDir: ./backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m app.worker
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL
+        fromGroup: closely-secrets
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: closely-redis
+          property: connectionString
+      - key: JWT_SECRET
+        fromGroup: closely-secrets
+      - key: GEMINI_API_KEY
+        fromGroup: closely-secrets
+      - key: GROQ_API_KEY
+        fromGroup: closely-secrets
+      - key: OPENROUTER_API_KEY
+        fromGroup: closely-secrets
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        fromGroup: closely-secrets
+      - key: WHATSAPP_ACCESS_TOKEN
+        fromGroup: closely-secrets
+      - key: WHATSAPP_APP_SECRET
+        fromGroup: closely-secrets
+      - key: WHATSAPP_VERIFY_TOKEN
+        fromGroup: closely-secrets
+      - key: SUPABASE_URL
+        fromGroup: closely-secrets
+      - key: SUPABASE_ANON_KEY
+        fromGroup: closely-secrets
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        fromGroup: closely-secrets
+
+  # --- Redis Instance (message queue) ---
+  - type: redis
+    name: closely-redis
+    region: oregon
+    plan: free
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: []
