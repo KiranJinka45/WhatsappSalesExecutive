@@ -8,14 +8,17 @@ from sqlalchemy import text
 from .config import settings
 import logging
 import uuid
-import sentry_sdk
+try:
+    import sentry_sdk
+    if settings.SENTRY_DSN:
+        sentry_sdk.init(
+            dsn=settings.SENTRY_DSN,
+            environment=settings.APP_ENV,
+            traces_sample_rate=1.0 if settings.APP_ENV != "production" else 0.1,
+        )
+except ImportError:
+    pass
 
-if settings.SENTRY_DSN:
-    sentry_sdk.init(
-        dsn=settings.SENTRY_DSN,
-        environment=settings.APP_ENV,
-        traces_sample_rate=1.0 if settings.APP_ENV != "production" else 0.1,
-    )
 
 # Configure Correlation Trace ID Logging
 class CorrelationIdFilter(logging.Filter):
