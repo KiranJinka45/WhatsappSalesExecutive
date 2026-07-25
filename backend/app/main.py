@@ -5,8 +5,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from .database import engine, Base, request_id_var
 from .routers import auth, catalog, brand, conversations, webhooks, health, analytics
 from sqlalchemy import text
+from .config import settings
 import logging
 import uuid
+import sentry_sdk
+
+if settings.SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        environment=settings.APP_ENV,
+        traces_sample_rate=1.0 if settings.APP_ENV != "production" else 0.1,
+    )
 
 # Configure Correlation Trace ID Logging
 class CorrelationIdFilter(logging.Filter):
@@ -31,7 +40,26 @@ async def lifespan(app: FastAPI):
 
     # Initialize Database tables
     Base.metadata.create_all(bind=engine)
+    
+    # Fail-safe to add detected_language column if it doesn't exist
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS detected_language VARCHAR(50);"))
+            conn.commit()
+    except Exception as e:
+        print(f"Altering messages table failed: {e}. If using SQLite or table already has the column, this is normal.")
+
+    # Start Redis Worker in a daemon background thread for queue processing
+    import threading
+    from .worker import Worker
+    worker_instance = Worker()
+    worker_thread = threading.Thread(target=worker_instance.run, daemon=True)
+    worker_thread.start()
+    print("Started Closely AI Worker daemon thread in background.")
+        
     yield
+    worker_instance.running = False
+
 
 app = FastAPI(
     title="Closely AI API",
@@ -39,6 +67,16 @@ app = FastAPI(
     version="2.0",
     lifespan=lifespan
 )
+
+# CORS configuration (registered first to be outermost)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"], # Vite dev server defaults
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 def contains_null_byte(val) -> bool:
     if isinstance(val, str):
@@ -103,15 +141,6 @@ async def add_correlation_id(request: Request, call_next):
         return response
     finally:
         request_id_var.reset(token)
-
-# CORS configuration
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"], # In production, lock this down to specific domains
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 # Register routers
 app.include_router(auth.router)
