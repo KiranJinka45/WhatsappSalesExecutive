@@ -712,8 +712,8 @@ async def receive_whatsapp_message(
     if conv.status == "WAITING_APPROVAL":
         return {"status": "forwarded_to_agent"}
 
-    # Delegate LLM and database intensive work to Redis queue
-    enqueue_message(org.id, conv.id, message_text)
+    # Delegate LLM and database intensive work to FastAPI BackgroundTasks
+    background_tasks.add_task(process_message_async, str(org.id), str(conv.id), message_text)
 
     # Return 200 OK immediately to Meta
     return {"status": "processing"}
