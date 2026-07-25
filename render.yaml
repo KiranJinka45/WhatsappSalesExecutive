@@ -15,35 +15,13 @@ services:
     envVars:
       - key: APP_ENV
         value: production
-      - key: DATABASE_URL
-        fromGroup: closely-secrets
       - key: REDIS_URL
         fromService:
           type: redis
           name: closely-redis
           property: connectionString
-      - key: JWT_SECRET
-        fromGroup: closely-secrets
-      - key: GEMINI_API_KEY
-        fromGroup: closely-secrets
-      - key: GROQ_API_KEY
-        fromGroup: closely-secrets
-      - key: OPENROUTER_API_KEY
-        fromGroup: closely-secrets
-      - key: WHATSAPP_PHONE_NUMBER_ID
-        fromGroup: closely-secrets
-      - key: WHATSAPP_ACCESS_TOKEN
-        fromGroup: closely-secrets
-      - key: WHATSAPP_APP_SECRET
-        fromGroup: closely-secrets
-      - key: WHATSAPP_VERIFY_TOKEN
-        fromGroup: closely-secrets
-      - key: SUPABASE_URL
-        fromGroup: closely-secrets
-      - key: SUPABASE_ANON_KEY
-        fromGroup: closely-secrets
-      - key: SUPABASE_SERVICE_ROLE_KEY
-        fromGroup: closely-secrets
+    envVarGroups:
+      - name: closely-secrets
 
   # --- Background Worker (processes AI responses from Redis queue) ---
   - type: worker
@@ -57,35 +35,13 @@ services:
     envVars:
       - key: APP_ENV
         value: production
-      - key: DATABASE_URL
-        fromGroup: closely-secrets
       - key: REDIS_URL
         fromService:
           type: redis
           name: closely-redis
           property: connectionString
-      - key: JWT_SECRET
-        fromGroup: closely-secrets
-      - key: GEMINI_API_KEY
-        fromGroup: closely-secrets
-      - key: GROQ_API_KEY
-        fromGroup: closely-secrets
-      - key: OPENROUTER_API_KEY
-        fromGroup: closely-secrets
-      - key: WHATSAPP_PHONE_NUMBER_ID
-        fromGroup: closely-secrets
-      - key: WHATSAPP_ACCESS_TOKEN
-        fromGroup: closely-secrets
-      - key: WHATSAPP_APP_SECRET
-        fromGroup: closely-secrets
-      - key: WHATSAPP_VERIFY_TOKEN
-        fromGroup: closely-secrets
-      - key: SUPABASE_URL
-        fromGroup: closely-secrets
-      - key: SUPABASE_ANON_KEY
-        fromGroup: closely-secrets
-      - key: SUPABASE_SERVICE_ROLE_KEY
-        fromGroup: closely-secrets
+    envVarGroups:
+      - name: closely-secrets
 
   # --- Redis Instance (message queue) ---
   - type: redis
@@ -94,3 +50,4 @@ services:
     plan: free
     maxmemoryPolicy: allkeys-lru
     ipAllowList: []
+
