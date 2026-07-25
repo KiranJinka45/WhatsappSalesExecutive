@@ -10,13 +10,14 @@ import logging
 import uuid
 try:
     import sentry_sdk
-    if settings.SENTRY_DSN:
+    _sentry_dsn = getattr(settings, "SENTRY_DSN", None)
+    if _sentry_dsn:
         sentry_sdk.init(
-            dsn=settings.SENTRY_DSN,
-            environment=settings.APP_ENV,
-            traces_sample_rate=1.0 if settings.APP_ENV != "production" else 0.1,
+            dsn=_sentry_dsn,
+            environment=getattr(settings, "APP_ENV", "production"),
+            traces_sample_rate=1.0 if getattr(settings, "APP_ENV", "production") != "production" else 0.1,
         )
-except ImportError:
+except (ImportError, Exception):
     pass
 
 
