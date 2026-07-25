@@ -6,11 +6,11 @@ from .. import models, schemas, security
 
 router = APIRouter(prefix="/api/auth", tags=["auth"], responses={400: {"description": "Bad Request"}})
 
+from fastapi import APIRouter, Depends, HTTPException, status, Response
+
 @router.post("/signup", response_model=schemas.UserOut, status_code=status.HTTP_201_CREATED, responses={400: {"description": "Bad Request"}, 409: {"description": "Conflict"}})
-def signup(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
-    from ..database import tenant_var
-    token_reset = tenant_var.set(None)
-    db.organization_id = None
+def signup(user_in: schemas.UserCreate, response: Response, db: Session = Depends(get_db)):
+    db.is_admin = True
     try:
         # Check if user already exists
         existing_user = db.query(models.User).filter(models.User.email == user_in.email).first()
@@ -38,19 +38,35 @@ def signup(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
+        access_token = security.create_access_token(data={"sub": str(new_user.id)})
+        response.set_cookie(
+            key="access_token",
+            value=f"{access_token}",
+            httponly=True,
+            samesite="strict",
+            secure=True,
+            max_age=security.settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        )
         return new_user
     finally:
-        tenant_var.reset(token_reset)
+        db.is_admin = False
 
-@router.post("/login", response_model=schemas.Token, responses={401: {"description": "Unauthorized"}})
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    from ..database import tenant_var
-    token_reset = tenant_var.set(None)
-    db.organization_id = None
+from ..rate_limiter import InMemoryRateLimiter
+
+login_limiter = InMemoryRateLimiter(requests_limit=5, window_seconds=60, name="login")
+
+@router.post("/login", response_model=schemas.LoginResponse, responses={401: {"description": "Unauthorized"}})
+def login(
+    response: Response,
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
+    limiter: None = Depends(login_limiter)
+):
+    db.is_admin = True
     try:
         user = db.query(models.User).filter(models.User.email == form_data.username).first()
     finally:
-        tenant_var.reset(token_reset)
+        db.is_admin = False
 
     if not user or not security.verify_password(form_data.password, user.password_hash):
         raise HTTPException(
@@ -60,7 +76,20 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
         )
     
     access_token = security.create_access_token(data={"sub": str(user.id)})
-    return {"access_token": access_token, "token_type": "bearer"}
+    response.set_cookie(
+        key="access_token",
+        value=f"{access_token}",
+        httponly=True,
+        samesite="strict",
+        secure=True,
+        max_age=security.settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+    return {"status": "success", "message": "Successfully authenticated", "access_token": access_token}
+
+@router.post("/logout")
+def logout(response: Response):
+    response.delete_cookie("access_token", httponly=True, samesite="strict", secure=True)
+    return {"status": "success"}
 
 @router.get("/me", response_model=schemas.UserOut, responses={401: {"description": "Unauthorized"}})
 def read_users_me(current_user: models.User = Depends(security.get_current_user)):

@@ -1,9 +1,12 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from decimal import Decimal
 from ..database import get_db, SessionLocal
 from .. import models, schemas, security, catalog_service
+
+logger = logging.getLogger(__name__)
 from ..catalog_service import generate_product_embedding_task
 
 router = APIRouter(prefix="/api/catalog", tags=["catalog"], responses={401: {"description": "Unauthorized"}, 400: {"description": "Bad Request"}})
@@ -13,7 +16,8 @@ async def upload_catalog(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    org: models.Organization = Depends(security.get_current_org)
+    org: models.Organization = Depends(security.get_current_org),
+    current_user: models.User = Depends(security.require_role("owner"))
 ):
     if not file.filename.endswith(('.csv', '.xlsx', '.xls')):
         raise HTTPException(
@@ -87,7 +91,8 @@ def create_product(
     product_in: schemas.ProductCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    org: models.Organization = Depends(security.get_current_org)
+    org: models.Organization = Depends(security.get_current_org),
+    current_user: models.User = Depends(security.require_role("owner"))
 ):
     # Check duplicate SKU
     existing = db.query(models.Product).filter(
@@ -142,7 +147,8 @@ def update_product(
     product_in: schemas.ProductUpdate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    org: models.Organization = Depends(security.get_current_org)
+    org: models.Organization = Depends(security.get_current_org),
+    current_user: models.User = Depends(security.require_role("owner"))
 ):
     product = db.query(models.Product).filter(
         models.Product.id == id
@@ -185,7 +191,8 @@ def update_product(
 def delete_product(
     id: str,
     db: Session = Depends(get_db),
-    org: models.Organization = Depends(security.get_current_org)
+    org: models.Organization = Depends(security.get_current_org),
+    current_user: models.User = Depends(security.require_role("owner"))
 ):
     product = db.query(models.Product).filter(
         models.Product.id == id

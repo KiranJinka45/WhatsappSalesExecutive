@@ -5,10 +5,38 @@ import logging
 from sqlalchemy.orm import Session
 from decimal import Decimal
 from fastapi import BackgroundTasks
+from pydantic import BaseModel, Field, field_validator, ValidationError
+from typing import List, Optional
 from . import models
 from .database import SessionLocal, tenant_var
 
 logger = logging.getLogger(__name__)
+
+class CatalogRow(BaseModel):
+    sku: str = Field(..., min_length=1)
+    name: str = Field(..., min_length=1)
+    price: Decimal = Field(..., ge=0)
+    color: str = Field(..., min_length=1)
+    category_name: str = Field(..., min_length=2, max_length=50)
+    gender: str = Field(default="Unisex")
+    fabric: str = Field(..., min_length=1)
+    description: str = Field(default="")
+    stock_count: int = Field(..., ge=0)
+    sizes: List[str] = Field(default_factory=list)
+    image_urls: List[str] = Field(default_factory=list)
+    video_urls: List[str] = Field(default_factory=list)
+
+    @field_validator("image_urls", "video_urls", mode="before")
+    def split_urls(cls, v):
+        if isinstance(v, str):
+            return [url.strip() for url in v.split(",") if url.strip()]
+        return v
+
+    @field_validator("sizes", mode="before")
+    def split_sizes(cls, v):
+        if isinstance(v, str):
+            return [s.strip() for s in v.split(",") if s.strip()]
+        return v
 
 def generate_product_embedding_task(db_session_factory, product_id: str):
     """
@@ -80,6 +108,9 @@ def parse_and_sync_catalog(
         except Exception as e:
             raise ValueError(f"Failed to decode file. Unsupported character encoding: {e}")
 
+    # Normalize line endings to standard Unix newline '\n' (handles \r\n and Classic Mac \r)
+    csv_data = csv_data.replace('\r\n', '\n').replace('\r', '\n')
+
     # Read first line to get headers
     lines = io.StringIO(csv_data)
     first_line_reader = csv.reader(lines)
@@ -114,140 +145,64 @@ def parse_and_sync_catalog(
     errors = []
     rows_to_process = []
     seen_skus = set()
-    seen_names = set()
-
-    url_regex = re.compile(
-        r'^(?:http|ftp)s?://' # http:// or https://
-        r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+(?:[A-Z]{2,6}\.?|[A-Z0-9-]{2,}\.?)|' # domain...
-        r'localhost|' # localhost...
-        r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})' # ...or ip
-        r'(?::\d+)?' # optional port
-        r'(?:/?|[/?]\S+)$', re.IGNORECASE)
 
     for idx, row in enumerate(reader, start=2):
         if not row or all(not val.strip() for val in row.values() if val):
             continue
             
-        sku = (row.get('sku') or '').strip()
-        name = (row.get('name') or '').strip()
-        price_val = (row.get('price') or '').strip()
-        color = (row.get('color') or '').strip()
-        category_name = (row.get('category') or '').strip()
-        fabric = (row.get('fabric') or '').strip()
-        stock_val = (row.get('stock_count') or '').strip()
-
-        row_errors = []
-
-        # SKU validation
-        if not sku:
-            row_errors.append("SKU is empty")
-        elif sku in seen_skus:
-            row_errors.append(f"Duplicate SKU '{sku}' found in CSV")
-        else:
-            seen_skus.add(sku)
-
-        # Name validation
-        if not name:
-            row_errors.append("Name is empty")
-        elif name.lower() in seen_names:
-            # We allow it, but record a warning/log or enforce uniqueness if requested
-            pass
-        else:
-            seen_names.add(name.lower())
-
-        # Color validation
-        if not color:
-            row_errors.append("Color is empty")
-
-        # Category validation
-        if not category_name:
-            row_errors.append("Category is empty")
-        elif len(category_name) < 2 or len(category_name) > 50:
-            row_errors.append(f"Category name '{category_name}' must be between 2 and 50 characters")
-
-        # Fabric validation
-        if not fabric:
-            row_errors.append("Fabric is empty")
-
-        # Price validation
-        if not price_val:
-            row_errors.append("Price is empty")
-        else:
-            # Handle currency symbols if present (e.g. ₹, $, INR)
-            clean_price = re.sub(r'[^\d.-]', '', price_val)
-            try:
-                price = Decimal(clean_price)
-                if price < 0:
-                    row_errors.append("Price cannot be negative")
-            except Exception:
-                row_errors.append(f"Invalid price format '{price_val}'")
-
-        # Stock validation
-        if not stock_val:
-            row_errors.append("Stock count is empty")
-        else:
-            try:
-                stock_count = int(stock_val)
-                if stock_count < 0:
-                    row_errors.append("Stock count cannot be negative")
-            except Exception:
-                row_errors.append(f"Invalid stock count value '{stock_val}'")
-
-        # Sizes validation
-        sizes_val = (row.get('sizes') or '').strip()
-        sizes = [s.strip() for s in sizes_val.split(',') if s.strip()]
+        # Pre-process some fields before Pydantic validation
+        raw_price = (row.get('price') or '').strip()
+        clean_price = re.sub(r'[^\d.-]', '', raw_price) if raw_price else ''
         
-        # Image URLs validation
-        image_val = (row.get('image_urls') or '').strip()
-        image_urls = [url.strip() for url in image_val.split(',') if url.strip()]
-        for url in image_urls:
-            if not url_regex.match(url):
-                row_errors.append(f"Invalid image URL format: '{url}'")
+        row_dict = {
+            'sku': (row.get('sku') or '').strip(),
+            'name': (row.get('name') or '').strip(),
+            'price': clean_price or None,
+            'color': (row.get('color') or '').strip(),
+            'category_name': (row.get('category') or '').strip(),
+            'gender': (row.get('gender') or 'Unisex').strip(),
+            'fabric': (row.get('fabric') or '').strip(),
+            'description': (row.get('description') or '').strip(),
+            'stock_count': (row.get('stock_count') or '').strip() or None,
+            'sizes': (row.get('sizes') or '').strip(),
+            'image_urls': (row.get('image_urls') or '').strip(),
+            'video_urls': (row.get('video_urls') or '').strip(),
+        }
 
-        # Video URLs validation
-        video_val = (row.get('video_urls') or '').strip()
-        video_urls = [url.strip() for url in video_val.split(',') if url.strip()]
-        for url in video_urls:
-            if not url_regex.match(url):
-                row_errors.append(f"Invalid video URL format: '{url}'")
-
-        if row_errors:
-            errors.append(f"Row {idx}: {', '.join(row_errors)}")
-        else:
-            row_data = {
-                'sku': sku,
-                'name': name,
-                'price': Decimal(clean_price),
-                'color': color,
-                'category_name': category_name,
-                'gender': (row.get('gender') or 'Unisex').strip(),
-                'fabric': fabric,
-                'description': (row.get('description') or '').strip(),
-                'stock_count': int(stock_val),
-                'sizes': sizes,
-                'image_urls': image_urls,
-                'video_urls': video_urls,
-            }
-            rows_to_process.append(row_data)
+        try:
+            valid_row = CatalogRow(**row_dict)
+            if valid_row.sku in seen_skus:
+                errors.append(f"Row {idx}: Duplicate SKU '{valid_row.sku}' found in CSV")
+            else:
+                seen_skus.add(valid_row.sku)
+                rows_to_process.append((idx, valid_row))
+        except ValidationError as e:
+            # Format Pydantic errors nicely
+            err_msgs = []
+            for err in e.errors():
+                loc = ".".join([str(l) for l in err["loc"]])
+                err_msgs.append(f"{loc}: {err['msg']}")
+            errors.append(f"Row {idx}: {'; '.join(err_msgs)}")
 
     if errors:
-        error_msg = "; ".join(errors[:20])
-        if len(errors) > 20:
-            error_msg += f" ... and {len(errors) - 20} more errors."
-        raise ValueError(f"Catalog validation failed: {error_msg}")
+        # Check if there is a negative price error to customize message
+        price_errs = [e for e in errors if "price" in e.lower() and ("greater than or equal to 0" in e.lower() or "less than" in e.lower() or "negative" in e.lower())]
+        if price_errs:
+            raise ValueError("Price cannot be negative")
+        raise ValueError(f"Validation failed: {'; '.join(errors)}")
 
     products_created = 0
     products_updated = 0
 
-    for r in rows_to_process:
+    for row_idx, valid_row in rows_to_process:
         # Create/Find category
         category = db.query(models.Category).filter(
             models.Category.organization_id == org_id,
-            models.Category.name.ilike(r['category_name'])
+            models.Category.name.ilike(valid_row.category_name)
         ).first()
 
         if not category:
-            category = models.Category(organization_id=org_id, name=r['category_name'])
+            category = models.Category(organization_id=org_id, name=valid_row.category_name)
             db.add(category)
             db.commit()
             db.refresh(category)
@@ -255,21 +210,21 @@ def parse_and_sync_catalog(
         # Search existing product
         product = db.query(models.Product).filter(
             models.Product.organization_id == org_id,
-            models.Product.sku == r['sku']
+            models.Product.sku == valid_row.sku
         ).first()
 
         if product:
             product.category_id = category.id
-            product.name = r['name']
-            product.gender = r['gender']
-            product.price = r['price']
-            product.color = r['color']
-            product.fabric = r['fabric']
-            product.description = r['description']
-            product.sizes = r['sizes']
-            product.stock_count = r['stock_count']
-            product.image_urls = r['image_urls']
-            product.video_urls = r['video_urls']
+            product.name = valid_row.name
+            product.gender = valid_row.gender
+            product.price = valid_row.price
+            product.color = valid_row.color
+            product.fabric = valid_row.fabric
+            product.description = valid_row.description
+            product.sizes = valid_row.sizes
+            product.stock_count = valid_row.stock_count
+            product.image_urls = valid_row.image_urls
+            product.video_urls = valid_row.video_urls
             # Re-trigger embedding generation asynchronously
             product.embedding_status = "pending"
             products_updated += 1
@@ -277,17 +232,17 @@ def parse_and_sync_catalog(
             product = models.Product(
                 organization_id=org_id,
                 category_id=category.id,
-                sku=r['sku'],
-                name=r['name'],
-                gender=r['gender'],
-                price=r['price'],
-                color=r['color'],
-                fabric=r['fabric'],
-                description=r['description'],
-                sizes=r['sizes'],
-                stock_count=r['stock_count'],
-                image_urls=r['image_urls'],
-                video_urls=r['video_urls'],
+                sku=valid_row.sku,
+                name=valid_row.name,
+                gender=valid_row.gender,
+                price=valid_row.price,
+                color=valid_row.color,
+                fabric=valid_row.fabric,
+                description=valid_row.description,
+                sizes=valid_row.sizes,
+                stock_count=valid_row.stock_count,
+                image_urls=valid_row.image_urls,
+                video_urls=valid_row.video_urls,
                 embedding_status="pending"
             )
             db.add(product)
@@ -298,8 +253,14 @@ def parse_and_sync_catalog(
         # Schedule the vector embedding generator task
         background_tasks.add_task(generate_product_embedding_task, SessionLocal, str(product.id))
 
+    status_msg = "success" if not errors else "partial_success"
+    if not rows_to_process and errors:
+        status_msg = "failed"
+        
     return {
-        "status": "success",
+        "status": status_msg,
         "created": products_created,
-        "updated": products_updated
+        "updated": products_updated,
+        "invalid_rows": len(errors),
+        "errors": errors
     }

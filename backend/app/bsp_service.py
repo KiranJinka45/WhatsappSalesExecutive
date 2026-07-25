@@ -21,12 +21,47 @@ def send_whatsapp_message(
     policies = org.policies or {}
     token = policies.get("whatsapp_access_token") or getattr(settings, "WHATSAPP_ACCESS_TOKEN", None)
     phone_id = policies.get("whatsapp_phone_number_id") or getattr(settings, "WHATSAPP_PHONE_NUMBER_ID", None)
+    
+    # WasenderAPI Credentials
+    wasender_token = policies.get("wasender_api_token") or getattr(settings, "WASENDER_API_TOKEN", None)
+    wasender_session = policies.get("wasender_session_id") or getattr(settings, "WASENDER_SESSION_ID", None) or "kiran"
 
     # Clean destination phone number format (remove non-digits)
     clean_phone = "".join([c for c in to_phone if c.isdigit()])
 
-    # 2. Check if credentials are present - if not, run mock delivery for local sandbox testing
-    if not token or not phone_id:
+    # Check if we are targeting the local emulator
+    is_emulator = "localhost" in settings.WHATSAPP_API_BASE_URL or "127.0.0.1" in settings.WHATSAPP_API_BASE_URL
+
+    # 1b. If WasenderAPI token is configured, use WasenderAPI gateway
+    if wasender_token:
+        wasender_url = f"{settings.WASENDER_API_BASE_URL.rstrip('/')}/send-text"
+        headers = {
+            "Authorization": f"Bearer {wasender_token}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "session": wasender_session,
+            "to": clean_phone,
+            "text": content
+        }
+        if media_url:
+            payload["media_url"] = media_url
+        try:
+            response = httpx.post(wasender_url, json=payload, headers=headers, timeout=10.0)
+            if response.status_code in (200, 201):
+                res_data = response.json()
+                msg_id = res_data.get("id") or res_data.get("message_id") or f"wasender-{clean_phone}"
+                logger.info(f"WasenderAPI message sent successfully to {clean_phone}. ID: {msg_id}")
+                return {"status": "sent", "message_id": msg_id, "mock": False}
+            else:
+                logger.error(f"WasenderAPI dispatch failed with status {response.status_code}: {response.text}")
+                return {"status": "failed", "error": response.text, "mock": False}
+        except Exception as e:
+            logger.error(f"Exception during WasenderAPI request: {e}", exc_info=True)
+            return {"status": "failed", "error": str(e), "mock": False}
+
+    # 2. Check if Meta credentials are present - if not, run mock delivery for local sandbox testing
+    if not (token and phone_id) and not is_emulator:
         logger.info(f"[MOCK WHATSAPP DISPATCH] Send message to {clean_phone}: '{content}'")
         return {
             "status": "sent",
@@ -34,8 +69,12 @@ def send_whatsapp_message(
             "mock": True
         }
 
+    # Fallback default mock credentials if testing emulator
+    token = token or "mock_access_token"
+    phone_id = phone_id or "mock_phone_id"
+
     # 3. Trigger actual WhatsApp Cloud API POST request
-    url = f"https://graph.facebook.com/v19.0/{phone_id}/messages"
+    url = f"{settings.WHATSAPP_API_BASE_URL}/{settings.META_API_VERSION}/{phone_id}/messages"
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json"
