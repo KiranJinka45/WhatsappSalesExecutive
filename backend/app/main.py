@@ -95,12 +95,31 @@ if extra_origins:
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_origin_regex=r"https://.*\.onrender\.com",
+    allow_origins=["*"] if os.getenv("ALLOW_ALL_CORS") else allowed_origins,
+    allow_origin_regex=r"https://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def ensure_cors_headers(request: Request, call_next):
+    origin = request.headers.get("origin")
+    if request.method == "OPTIONS":
+        response = JSONResponse(status_code=200, content={"status": "ok"})
+    else:
+        try:
+            response = await call_next(request)
+        except Exception as exc:
+            logger.error(f"Unhandled server exception: {exc}", exc_info=True)
+            response = JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
+    if origin:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With, Accept"
+    return response
 
 
 def contains_null_byte(val) -> bool:
