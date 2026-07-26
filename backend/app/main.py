@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -113,6 +114,10 @@ def contains_null_byte(val) -> bool:
 
 @app.middleware("http")
 async def block_null_bytes(request: Request, call_next):
+    # Always allow OPTIONS preflight requests to pass cleanly to CORSMiddleware
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
     # Check path and query parameters for NUL characters (including URL-decoded)
     import urllib.parse
     decoded_path = urllib.parse.unquote(request.url.path)
