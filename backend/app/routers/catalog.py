@@ -30,10 +30,15 @@ async def upload_catalog(
             db, str(org.id), contents, file.filename, background_tasks
         )
         return result
+    except ValueError as ve:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(ve)
+        )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail=f"Internal server error: {str(e)}"
         )
 
 @router.get("/products", response_model=List[schemas.ProductOut])

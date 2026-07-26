@@ -107,8 +107,14 @@ export default function Catalog({ token }) {
       });
 
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.detail || 'Bulk upload failed.');
+        let errorMsg = 'Bulk upload failed.';
+        try {
+          const data = await res.json();
+          errorMsg = data.detail || errorMsg;
+        } catch (parseErr) {
+          errorMsg = `Server error: ${res.status} ${res.statusText}`;
+        }
+        throw new Error(errorMsg);
       }
 
       const data = await res.json();
