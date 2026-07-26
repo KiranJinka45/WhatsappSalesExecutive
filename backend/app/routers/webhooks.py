@@ -152,12 +152,23 @@ def process_message_async(org_id: str, conv_id: str, message_text: str):
                     # Check if embedding is zero vector (fallback to text matching if offline/missing API key)
                     is_zero_vector = all(v == 0.0 for v in query_embedding) if query_embedding else True
                     
-                    if is_zero_vector:
-                        # Offline fallback: keyword/text search on name, description, color, fabric
+                    catalog_matches = []
+                    if not is_zero_vector:
+                        try:
+                            catalog_matches = db.query(models.Product).order_by(
+                                models.Product.embedding.cosine_distance(query_embedding)
+                            ).limit(5).all()
+                        except Exception as vec_err:
+                            logger.warning(f"Vector search failed in database: {vec_err}. Falling back to keyword search.")
+                            catalog_matches = []
+
+                    if is_zero_vector or not catalog_matches:
+                        # Offline / Exception fallback: keyword/text search on name, sku, description, color, fabric
                         keywords = [w.strip() for w in search_query.lower().split() if len(w.strip()) > 2]
                         filters = []
                         for kw in keywords:
                             filters.append(models.Product.name.ilike(f"%{kw}%"))
+                            filters.append(models.Product.sku.ilike(f"%{kw}%"))
                             filters.append(models.Product.description.ilike(f"%{kw}%"))
                             filters.append(models.Product.color.ilike(f"%{kw}%"))
                             filters.append(models.Product.fabric.ilike(f"%{kw}%"))
@@ -171,10 +182,6 @@ def process_message_async(org_id: str, conv_id: str, message_text: str):
                         # If still no keyword matches, fallback to returning the top 5 products
                         if not catalog_matches:
                             catalog_matches = db.query(models.Product).limit(5).all()
-                    else:
-                        catalog_matches = db.query(models.Product).order_by(
-                            models.Product.embedding.cosine_distance(query_embedding)
-                        ).limit(5).all()
                     
                     catalog_context = [{
                         "sku": p.sku,
@@ -462,7 +469,7 @@ def process_message_async(org_id: str, conv_id: str, message_text: str):
                 conversation_id=conv.id,
                 sender="ai",
                 message_type="text",
-                content="System Error: Failed to generate reply.",
+                content="I'm having a little trouble retrieving details right now. Connecting you with our store manager!",
                 status="failed",
                 error_message=str(last_exception)
             )
