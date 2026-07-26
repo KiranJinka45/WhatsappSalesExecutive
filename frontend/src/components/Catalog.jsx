@@ -3,6 +3,7 @@ import { apiFetch } from '../api';
 
 export default function Catalog({ token }) {
   const [products, setProducts] = useState([]);
+  const [editingProductId, setEditingProductId] = useState(null);
   const [sku, setSku] = useState('');
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
@@ -39,12 +40,42 @@ export default function Catalog({ token }) {
     }
   };
 
+  const resetForm = () => {
+    setEditingProductId(null);
+    setSku('');
+    setName('');
+    setPrice('');
+    setColor('');
+    setFabric('');
+    setCategoryName('');
+    setGender('Women');
+    setSizes('Free Size');
+    setStockCount('10');
+    setDescription('');
+  };
+
+  const handleEditClick = (product) => {
+    setEditingProductId(product.id);
+    setSku(product.sku || '');
+    setName(product.name || '');
+    setPrice(product.price || '');
+    setColor(product.color || '');
+    setFabric(product.fabric || '');
+    setCategoryName(product.category_name || '');
+    setGender(product.gender || 'Women');
+    setSizes(Array.isArray(product.sizes) ? product.sizes.join(', ') : 'Free Size');
+    setStockCount(product.stock_count !== undefined ? String(product.stock_count) : '10');
+    setDescription(product.description || '');
+    setError('');
+    setSuccess('');
+  };
+
   const handleManualSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setSuccess('');
 
-    const sizeArray = sizes.split(',').map(s => s.strip ? s.strip() : s.trim()).filter(Boolean);
+    const sizeArray = sizes.split(',').map(s => s.trim()).filter(Boolean);
 
     const payload = {
       sku,
@@ -62,8 +93,11 @@ export default function Catalog({ token }) {
     };
 
     try {
-      const res = await apiFetch('/api/catalog/products', {
-        method: 'POST',
+      const url = editingProductId ? `/api/catalog/products/${editingProductId}` : '/api/catalog/products';
+      const method = editingProductId ? 'PUT' : 'POST';
+
+      const res = await apiFetch(url, {
+        method,
         headers: {
           'Content-Type': 'application/json'
         },
@@ -72,17 +106,11 @@ export default function Catalog({ token }) {
 
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.detail || 'Failed to create product.');
+        throw new Error(data.detail || `Failed to ${editingProductId ? 'update' : 'create'} product.`);
       }
 
-      setSuccess('Product created successfully!');
-      setSku('');
-      setName('');
-      setPrice('');
-      setColor('');
-      setFabric('');
-      setCategoryName('');
-      setDescription('');
+      setSuccess(`Product ${editingProductId ? 'updated' : 'created'} successfully!`);
+      resetForm();
       fetchProducts();
     } catch (err) {
       setError(err.message);
@@ -135,6 +163,7 @@ export default function Catalog({ token }) {
         method: 'DELETE'
       });
       if (res.ok) {
+        if (editingProductId === id) resetForm();
         fetchProducts();
       }
     } catch (err) {
@@ -166,9 +195,21 @@ export default function Catalog({ token }) {
           {success && <div style={styles.success}>{success}</div>}
         </div>
 
-        {/* 2. Manual Add Product Form */}
+        {/* 2. Manual Add / Edit Product Form */}
         <div className="glass-panel" style={styles.card}>
-          <h3>Add Product Manually</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3>{editingProductId ? '✏️ Edit Product' : 'Add Product Manually'}</h3>
+            {editingProductId && (
+              <button 
+                type="button" 
+                className="btn btn-secondary" 
+                style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
+                onClick={resetForm}
+              >
+                ✖ Cancel
+              </button>
+            )}
+          </div>
           
           <form onSubmit={handleManualSubmit} style={styles.manualForm}>
             <div style={styles.formRow}>
@@ -231,7 +272,9 @@ export default function Catalog({ token }) {
             {error && <div style={styles.error}>{error}</div>}
             {success && <div style={styles.success}>{success}</div>}
 
-            <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>Create Product</button>
+            <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>
+              {editingProductId ? 'Update Product' : 'Create Product'}
+            </button>
           </form>
         </div>
       </div>
@@ -277,20 +320,31 @@ export default function Catalog({ token }) {
                     <td style={styles.td}>₹{prod.price}</td>
                     <td style={styles.td}>{prod.color}</td>
                     <td style={styles.td}>{prod.fabric || 'N/A'}</td>
-                    <td style={styles.td}>{prod.sizes.join(', ')}</td>
+                    <td style={styles.td}>{Array.isArray(prod.sizes) ? prod.sizes.join(', ') : prod.sizes}</td>
                     <td style={styles.td}>
                       <span className={`badge ${prod.stock_count > 0 ? 'badge-success' : 'badge-human'}`} style={{ textTransform: 'none' }}>
                         {prod.stock_count} left
                       </span>
                     </td>
                     <td style={styles.td}>
-                      <button 
-                        className="btn btn-secondary" 
-                        style={styles.deleteBtn}
-                        onClick={() => handleDeleteProduct(prod.id)}
-                      >
-                        🗑️
-                      </button>
+                      <div style={{ display: 'flex', gap: '0.4rem' }}>
+                        <button 
+                          className="btn btn-secondary" 
+                          style={styles.actionBtn}
+                          title="Edit product"
+                          onClick={() => handleEditClick(prod)}
+                        >
+                          ✏️
+                        </button>
+                        <button 
+                          className="btn btn-secondary" 
+                          style={styles.actionBtn}
+                          title="Delete product"
+                          onClick={() => handleDeleteProduct(prod.id)}
+                        >
+                          🗑️
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -424,7 +478,7 @@ const styles = {
     textAlign: 'center',
     color: 'var(--text-muted)',
   },
-  deleteBtn: {
+  actionBtn: {
     padding: '0.3rem 0.5rem',
     fontSize: '0.8rem',
   },
