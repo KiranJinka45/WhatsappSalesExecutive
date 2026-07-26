@@ -162,6 +162,8 @@ export default function Catalog({ token }) {
               {loading ? 'Processing & Embedding...' : '⬆️ Sync Catalog'}
             </button>
           </form>
+          {error && <div style={styles.error}>{error}</div>}
+          {success && <div style={styles.success}>{success}</div>}
         </div>
 
         {/* 2. Manual Add Product Form */}
