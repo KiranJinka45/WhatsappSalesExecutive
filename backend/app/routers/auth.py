@@ -39,11 +39,12 @@ def signup(user_in: schemas.UserCreate, response: Response, db: Session = Depend
         db.commit()
         db.refresh(new_user)
         access_token = security.create_access_token(data={"sub": str(new_user.id)})
+        cookie_samesite = "none" if security.settings.APP_ENV == "production" or os.getenv("RENDER") else "lax"
         response.set_cookie(
             key="access_token",
             value=f"{access_token}",
             httponly=True,
-            samesite="strict",
+            samesite=cookie_samesite,
             secure=True,
             max_age=security.settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         )
@@ -76,11 +77,12 @@ def login(
         )
     
     access_token = security.create_access_token(data={"sub": str(user.id)})
+    cookie_samesite = "none" if security.settings.APP_ENV == "production" or os.getenv("RENDER") else "lax"
     response.set_cookie(
         key="access_token",
         value=f"{access_token}",
         httponly=True,
-        samesite="strict",
+        samesite=cookie_samesite,
         secure=True,
         max_age=security.settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
@@ -88,7 +90,8 @@ def login(
 
 @router.post("/logout")
 def logout(response: Response):
-    response.delete_cookie("access_token", httponly=True, samesite="strict", secure=True)
+    cookie_samesite = "none" if security.settings.APP_ENV == "production" or os.getenv("RENDER") else "lax"
+    response.delete_cookie("access_token", httponly=True, samesite=cookie_samesite, secure=True)
     return {"status": "success"}
 
 @router.get("/me", response_model=schemas.UserOut, responses={401: {"description": "Unauthorized"}})

@@ -81,9 +81,21 @@ app = FastAPI(
 )
 
 # CORS configuration (registered first to be outermost)
+allowed_origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "https://closely-frontend.onrender.com",
+]
+
+# Read optional ALLOWED_ORIGINS env var if present (comma-separated)
+extra_origins = os.getenv("ALLOWED_ORIGINS")
+if extra_origins:
+    allowed_origins.extend([o.strip() for o in extra_origins.split(",") if o.strip()])
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"], # Vite dev server defaults
+    allow_origins=allowed_origins,
+    allow_origin_regex=r"https://.*\.onrender\.com",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
