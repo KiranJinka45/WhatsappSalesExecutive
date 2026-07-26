@@ -119,15 +119,19 @@ def parse_and_sync_catalog(
     except StopIteration:
         raise ValueError("Empty CSV file uploaded.")
 
-    # Normalize headers
+    # Normalize headers dynamically to handle common CSV column aliases
     normalized_header = []
     for col in header:
         col_clean = col.strip().lower()
-        if col_clean in ['stock count', 'stock_count']:
+        if col_clean in ['stock count', 'stock_count', 'stock', 'qty', 'quantity', 'inventory']:
             normalized_header.append('stock_count')
-        elif col_clean in ['image urls', 'image_urls']:
+        elif col_clean in ['price (inr)', 'price(inr)', 'price_inr', 'price', 'mrp', 'amount', 'cost']:
+            normalized_header.append('price')
+        elif col_clean in ['category_name', 'category name', 'category']:
+            normalized_header.append('category')
+        elif col_clean in ['image urls', 'image_urls', 'images', 'image_url']:
             normalized_header.append('image_urls')
-        elif col_clean in ['video urls', 'video_urls']:
+        elif col_clean in ['video urls', 'video_urls', 'videos', 'video_url']:
             normalized_header.append('video_urls')
         else:
             normalized_header.append(col_clean)
