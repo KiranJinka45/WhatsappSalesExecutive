@@ -109,8 +109,13 @@ async def unified_security_cors_middleware(request: Request, call_next):
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Access-Control-Allow-Credentials"] = "true"
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
-        response.headers["Access-Control-Allow-Headers"] = "*"
-        response.headers["Access-Control-Expose-Headers"] = "*"
+        
+        # When credentials=true, browsers do NOT allow wildcard '*' for Allow-Headers.
+        # We dynamically echo back whatever headers the client requested, or use a safe default.
+        req_headers = request.headers.get("access-control-request-headers", "Content-Type, Authorization, X-Request-ID")
+        response.headers["Access-Control-Allow-Headers"] = req_headers
+        
+        response.headers["Access-Control-Expose-Headers"] = "Content-Type, Authorization, X-Request-ID"
         
     return response
 
