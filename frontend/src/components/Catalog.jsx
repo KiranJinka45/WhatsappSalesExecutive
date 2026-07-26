@@ -6,7 +6,6 @@ export default function Catalog({ token }) {
   const [allProducts, setAllProducts] = useState([]);
   const [noResultsFound, setNoResultsFound] = useState(false);
   const [editingProductId, setEditingProductId] = useState(null);
-  const [isManualFormOpen, setIsManualFormOpen] = useState(false);
   const [sku, setSku] = useState('');
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
@@ -58,7 +57,6 @@ export default function Catalog({ token }) {
 
   const resetForm = () => {
     setEditingProductId(null);
-    setIsManualFormOpen(false);
     setSku('');
     setName('');
     setPrice('');
@@ -73,7 +71,6 @@ export default function Catalog({ token }) {
 
   const handleEditClick = (product) => {
     setEditingProductId(product.id);
-    setIsManualFormOpen(true);
     setSku(product.sku || '');
     setName(product.name || '');
     setPrice(product.price || '');
@@ -213,99 +210,89 @@ export default function Catalog({ token }) {
           {success && <div style={styles.success}>{success}</div>}
         </div>
 
-        {/* 2. Collapsible Manual Add / Edit Product Form */}
-        <div className="glass-panel" style={styles.card}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 style={{ fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              {editingProductId ? '✏️ Edit Product' : '➕ Add Product Manually'}
+        {/* 2. Compact Manual Add / Edit Product Form (Always Visible) */}
+        <div className="glass-panel" style={{ ...styles.card, padding: '0.85rem 1rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
+            <h3 style={{ fontSize: '0.9rem', margin: 0 }}>
+              {editingProductId ? '✏️ Edit Product' : 'Add Product Manually'}
             </h3>
-            <button 
-              type="button" 
-              className="btn btn-secondary" 
-              style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem' }}
-              onClick={() => {
-                if (isManualFormOpen) {
-                  resetForm();
-                } else {
-                  setIsManualFormOpen(true);
-                }
-              }}
-            >
-              {isManualFormOpen ? '✖ Close' : '➕ Expand Form'}
-            </button>
+            {editingProductId && (
+              <button 
+                type="button" 
+                className="btn btn-secondary" 
+                style={{ padding: '0.15rem 0.5rem', fontSize: '0.7rem' }}
+                onClick={resetForm}
+              >
+                ✖ Cancel
+              </button>
+            )}
           </div>
 
-          {!isManualFormOpen && !editingProductId ? (
-            <p style={{ ...styles.subtitle, margin: 0, cursor: 'pointer' }} onClick={() => setIsManualFormOpen(true)}>
-              Click <strong>"➕ Expand Form"</strong> to manually add a single item without a CSV.
-            </p>
-          ) : (
-            <form onSubmit={handleManualSubmit} style={styles.manualForm}>
-              <div style={styles.formRow}>
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>SKU *</label>
-                  <input type="text" className="form-input" value={sku} onChange={e => setSku(e.target.value)} required />
-                </div>
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>Name *</label>
-                  <input type="text" className="form-input" value={name} onChange={e => setName(e.target.value)} required />
-                </div>
-              </div>
-
-              <div style={styles.formRow}>
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>Price (INR) *</label>
-                  <input type="number" className="form-input" value={price} onChange={e => setPrice(e.target.value)} required />
-                </div>
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>Color *</label>
-                  <input type="text" className="form-input" placeholder="Black" value={color} onChange={e => setColor(e.target.value)} required />
-                </div>
-              </div>
-
-              <div style={styles.formRow}>
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>Fabric</label>
-                  <input type="text" className="form-input" placeholder="Silk" value={fabric} onChange={e => setFabric(e.target.value)} />
-                </div>
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>Category</label>
-                  <input type="text" className="form-input" placeholder="Sarees" value={categoryName} onChange={e => setCategoryName(e.target.value)} />
-                </div>
-              </div>
-
-              <div style={styles.formRow}>
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>Gender</label>
-                  <select className="form-input" value={gender} onChange={e => setGender(e.target.value)}>
-                    <option value="Women">Women</option>
-                    <option value="Men">Men</option>
-                    <option value="Unisex">Unisex</option>
-                  </select>
-                </div>
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>Sizes (comma separated)</label>
-                  <input type="text" className="form-input" value={sizes} onChange={e => setSizes(e.target.value)} />
-                </div>
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>Stock</label>
-                  <input type="number" className="form-input" value={stockCount} onChange={e => setStockCount(e.target.value)} />
-                </div>
-              </div>
-
+          <form onSubmit={handleManualSubmit} style={styles.manualForm}>
+            <div style={styles.formRow}>
               <div style={styles.inputGroup}>
-                <label style={styles.label}>Description</label>
-                <textarea className="form-input" style={styles.textarea} value={description} onChange={e => setDescription(e.target.value)} />
+                <label style={styles.label}>SKU *</label>
+                <input type="text" className="form-input" style={styles.compactInput} value={sku} onChange={e => setSku(e.target.value)} required />
               </div>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Name *</label>
+                <input type="text" className="form-input" style={styles.compactInput} value={name} onChange={e => setName(e.target.value)} required />
+              </div>
+            </div>
 
-              {error && <div style={styles.error}>{error}</div>}
-              {success && <div style={styles.success}>{success}</div>}
+            <div style={styles.formRow}>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Price (INR) *</label>
+                <input type="number" className="form-input" style={styles.compactInput} value={price} onChange={e => setPrice(e.target.value)} required />
+              </div>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Color *</label>
+                <input type="text" className="form-input" style={styles.compactInput} placeholder="Black" value={color} onChange={e => setColor(e.target.value)} required />
+              </div>
+            </div>
 
-              <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>
-                {editingProductId ? 'Update Product' : 'Create Product'}
-              </button>
-            </form>
-          )}
+            <div style={styles.formRow}>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Fabric</label>
+                <input type="text" className="form-input" style={styles.compactInput} placeholder="Silk" value={fabric} onChange={e => setFabric(e.target.value)} />
+              </div>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Category</label>
+                <input type="text" className="form-input" style={styles.compactInput} placeholder="Sarees" value={categoryName} onChange={e => setCategoryName(e.target.value)} />
+              </div>
+            </div>
+
+            <div style={styles.formRow}>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Gender</label>
+                <select className="form-input" style={styles.compactInput} value={gender} onChange={e => setGender(e.target.value)}>
+                  <option value="Women">Women</option>
+                  <option value="Men">Men</option>
+                  <option value="Unisex">Unisex</option>
+                </select>
+              </div>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Sizes</label>
+                <input type="text" className="form-input" style={styles.compactInput} value={sizes} onChange={e => setSizes(e.target.value)} />
+              </div>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Stock</label>
+                <input type="number" className="form-input" style={styles.compactInput} value={stockCount} onChange={e => setStockCount(e.target.value)} />
+              </div>
+            </div>
+
+            <div style={styles.inputGroup}>
+              <label style={styles.label}>Description</label>
+              <textarea className="form-input" style={styles.compactTextarea} value={description} onChange={e => setDescription(e.target.value)} />
+            </div>
+
+            {error && <div style={styles.error}>{error}</div>}
+            {success && <div style={styles.success}>{success}</div>}
+
+            <button type="submit" className="btn btn-primary" style={{ width: '100%', padding: '0.35rem 0.5rem', fontSize: '0.8rem' }}>
+              {editingProductId ? 'Update Product' : 'Create Product'}
+            </button>
+          </form>
         </div>
       </div>
 
@@ -433,25 +420,32 @@ const styles = {
   manualForm: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '0.9rem',
+    gap: '0.4rem',
   },
   formRow: {
     display: 'flex',
-    gap: '0.75rem',
+    gap: '0.4rem',
   },
   inputGroup: {
     flex: 1,
     display: 'flex',
     flexDirection: 'column',
-    gap: '0.3rem',
+    gap: '0.15rem',
   },
   label: {
-    fontSize: '0.75rem',
-    fontWeight: '700',
+    fontSize: '0.7rem',
+    fontWeight: '600',
     color: 'var(--text-secondary)',
   },
-  textarea: {
-    height: '60px',
+  compactInput: {
+    padding: '0.25rem 0.5rem',
+    fontSize: '0.8rem',
+    height: '28px',
+  },
+  compactTextarea: {
+    padding: '0.25rem 0.5rem',
+    fontSize: '0.8rem',
+    height: '38px',
     resize: 'none',
   },
   error: {
