@@ -1,6 +1,6 @@
 import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from .database import engine, Base, request_id_var
@@ -103,80 +103,35 @@ app.add_middleware(
 )
 
 @app.middleware("http")
-async def ensure_cors_headers(request: Request, call_next):
+async def unified_security_cors_middleware(request: Request, call_next):
     origin = request.headers.get("origin")
+    
+    # 1. Handle OPTIONS preflight immediately with 200 OK
     if request.method == "OPTIONS":
-        response = JSONResponse(status_code=200, content={"status": "ok"})
+        response = Response(status_code=200)
     else:
-        try:
-            response = await call_next(request)
-        except Exception as exc:
-            logger.error(f"Unhandled server exception: {exc}", exc_info=True)
-            response = JSONResponse(status_code=500, content={"detail": "Internal server error"})
+        # 2. Check NUL bytes in path & query
+        import urllib.parse
+        decoded_path = urllib.parse.unquote(request.url.path)
+        decoded_query = urllib.parse.unquote(request.url.query)
+        if "\x00" in decoded_path or "\x00" in decoded_query:
+            response = JSONResponse(status_code=400, content={"detail": "NUL characters are not allowed"})
+        else:
+            try:
+                response = await call_next(request)
+            except Exception as exc:
+                logger.error(f"Unhandled server exception: {exc}", exc_info=True)
+                response = JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
+    # 3. Always attach CORS headers to EVERY response (200, 401, 400, 429, 500, OPTIONS)
     if origin:
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Access-Control-Allow-Credentials"] = "true"
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With, Accept"
-    return response
-
-
-def contains_null_byte(val) -> bool:
-    if isinstance(val, str):
-        return "\x00" in val
-    elif isinstance(val, dict):
-        return any(contains_null_byte(v) for v in val.values()) or any(contains_null_byte(k) for k in val.keys())
-    elif isinstance(val, list):
-        return any(contains_null_byte(item) for item in val)
-    return False
-
-@app.middleware("http")
-async def block_null_bytes(request: Request, call_next):
-    # Always allow OPTIONS preflight requests to pass cleanly to CORSMiddleware
-    if request.method == "OPTIONS":
-        return await call_next(request)
-
-    # Check path and query parameters for NUL characters (including URL-decoded)
-    import urllib.parse
-    decoded_path = urllib.parse.unquote(request.url.path)
-    decoded_query = urllib.parse.unquote(request.url.query)
-    if "\x00" in decoded_path or "\x00" in decoded_query:
-        return JSONResponse(status_code=400, content={"detail": "NUL characters are not allowed"})
+        response.headers["Access-Control-Allow-Headers"] = "*"
+        response.headers["Access-Control-Expose-Headers"] = "*"
         
-    # Check headers
-    for key, val in request.headers.items():
-        if "\x00" in val:
-            return JSONResponse(status_code=400, content={"detail": "NUL characters are not allowed"})
-
-    # Check request body if not a multipart file upload
-    content_type = request.headers.get("content-type", "")
-    if "multipart/form-data" not in content_type:
-        body = await request.body()
-        if b"\x00" in body:
-            return JSONResponse(status_code=400, content={"detail": "NUL characters are not allowed"})
-            
-        # Parse JSON-escaped NULs
-        if "application/json" in content_type and body:
-            try:
-                import json
-                parsed = json.loads(body)
-                if contains_null_byte(parsed):
-                    return JSONResponse(status_code=400, content={"detail": "NUL characters are not allowed"})
-            except Exception:
-                pass
-                
-        # Parse form-urlencoded escaped NULs
-        if "application/x-www-form-urlencoded" in content_type and body:
-            try:
-                parsed_str = body.decode("utf-8", errors="ignore")
-                decoded_str = urllib.parse.unquote(parsed_str)
-                if "\x00" in decoded_str:
-                    return JSONResponse(status_code=400, content={"detail": "NUL characters are not allowed"})
-            except Exception:
-                pass
-
-    return await call_next(request)
+    return response
 
 @app.middleware("http")
 async def add_correlation_id(request: Request, call_next):
