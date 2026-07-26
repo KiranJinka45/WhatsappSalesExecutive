@@ -6,6 +6,7 @@ export default function Catalog({ token }) {
   const [allProducts, setAllProducts] = useState([]);
   const [noResultsFound, setNoResultsFound] = useState(false);
   const [editingProductId, setEditingProductId] = useState(null);
+  const [isManualFormOpen, setIsManualFormOpen] = useState(false);
   const [sku, setSku] = useState('');
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
@@ -57,6 +58,7 @@ export default function Catalog({ token }) {
 
   const resetForm = () => {
     setEditingProductId(null);
+    setIsManualFormOpen(false);
     setSku('');
     setName('');
     setPrice('');
@@ -71,6 +73,7 @@ export default function Catalog({ token }) {
 
   const handleEditClick = (product) => {
     setEditingProductId(product.id);
+    setIsManualFormOpen(true);
     setSku(product.sku || '');
     setName(product.name || '');
     setPrice(product.price || '');
@@ -210,87 +213,99 @@ export default function Catalog({ token }) {
           {success && <div style={styles.success}>{success}</div>}
         </div>
 
-        {/* 2. Manual Add / Edit Product Form */}
+        {/* 2. Collapsible Manual Add / Edit Product Form */}
         <div className="glass-panel" style={styles.card}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3>{editingProductId ? '✏️ Edit Product' : 'Add Product Manually'}</h3>
-            {editingProductId && (
-              <button 
-                type="button" 
-                className="btn btn-secondary" 
-                style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
-                onClick={resetForm}
-              >
-                ✖ Cancel
-              </button>
-            )}
-          </div>
-          
-          <form onSubmit={handleManualSubmit} style={styles.manualForm}>
-            <div style={styles.formRow}>
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>SKU *</label>
-                <input type="text" className="form-input" value={sku} onChange={e => setSku(e.target.value)} required />
-              </div>
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Name *</label>
-                <input type="text" className="form-input" value={name} onChange={e => setName(e.target.value)} required />
-              </div>
-            </div>
-
-            <div style={styles.formRow}>
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Price (INR) *</label>
-                <input type="number" className="form-input" value={price} onChange={e => setPrice(e.target.value)} required />
-              </div>
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Color *</label>
-                <input type="text" className="form-input" placeholder="Black" value={color} onChange={e => setColor(e.target.value)} required />
-              </div>
-            </div>
-
-            <div style={styles.formRow}>
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Fabric</label>
-                <input type="text" className="form-input" placeholder="Silk" value={fabric} onChange={e => setFabric(e.target.value)} />
-              </div>
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Category</label>
-                <input type="text" className="form-input" placeholder="Sarees" value={categoryName} onChange={e => setCategoryName(e.target.value)} />
-              </div>
-            </div>
-
-            <div style={styles.formRow}>
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Gender</label>
-                <select className="form-input" value={gender} onChange={e => setGender(e.target.value)}>
-                  <option value="Women">Women</option>
-                  <option value="Men">Men</option>
-                  <option value="Unisex">Unisex</option>
-                </select>
-              </div>
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Sizes (comma separated)</label>
-                <input type="text" className="form-input" value={sizes} onChange={e => setSizes(e.target.value)} />
-              </div>
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Stock</label>
-                <input type="number" className="form-input" value={stockCount} onChange={e => setStockCount(e.target.value)} />
-              </div>
-            </div>
-
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Description</label>
-              <textarea className="form-input" style={styles.textarea} value={description} onChange={e => setDescription(e.target.value)} />
-            </div>
-
-            {error && <div style={styles.error}>{error}</div>}
-            {success && <div style={styles.success}>{success}</div>}
-
-            <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>
-              {editingProductId ? 'Update Product' : 'Create Product'}
+            <h3 style={{ fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              {editingProductId ? '✏️ Edit Product' : '➕ Add Product Manually'}
+            </h3>
+            <button 
+              type="button" 
+              className="btn btn-secondary" 
+              style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem' }}
+              onClick={() => {
+                if (isManualFormOpen) {
+                  resetForm();
+                } else {
+                  setIsManualFormOpen(true);
+                }
+              }}
+            >
+              {isManualFormOpen ? '✖ Close' : '➕ Expand Form'}
             </button>
-          </form>
+          </div>
+
+          {!isManualFormOpen && !editingProductId ? (
+            <p style={{ ...styles.subtitle, margin: 0, cursor: 'pointer' }} onClick={() => setIsManualFormOpen(true)}>
+              Click <strong>"➕ Expand Form"</strong> to manually add a single item without a CSV.
+            </p>
+          ) : (
+            <form onSubmit={handleManualSubmit} style={styles.manualForm}>
+              <div style={styles.formRow}>
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>SKU *</label>
+                  <input type="text" className="form-input" value={sku} onChange={e => setSku(e.target.value)} required />
+                </div>
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>Name *</label>
+                  <input type="text" className="form-input" value={name} onChange={e => setName(e.target.value)} required />
+                </div>
+              </div>
+
+              <div style={styles.formRow}>
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>Price (INR) *</label>
+                  <input type="number" className="form-input" value={price} onChange={e => setPrice(e.target.value)} required />
+                </div>
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>Color *</label>
+                  <input type="text" className="form-input" placeholder="Black" value={color} onChange={e => setColor(e.target.value)} required />
+                </div>
+              </div>
+
+              <div style={styles.formRow}>
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>Fabric</label>
+                  <input type="text" className="form-input" placeholder="Silk" value={fabric} onChange={e => setFabric(e.target.value)} />
+                </div>
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>Category</label>
+                  <input type="text" className="form-input" placeholder="Sarees" value={categoryName} onChange={e => setCategoryName(e.target.value)} />
+                </div>
+              </div>
+
+              <div style={styles.formRow}>
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>Gender</label>
+                  <select className="form-input" value={gender} onChange={e => setGender(e.target.value)}>
+                    <option value="Women">Women</option>
+                    <option value="Men">Men</option>
+                    <option value="Unisex">Unisex</option>
+                  </select>
+                </div>
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>Sizes (comma separated)</label>
+                  <input type="text" className="form-input" value={sizes} onChange={e => setSizes(e.target.value)} />
+                </div>
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>Stock</label>
+                  <input type="number" className="form-input" value={stockCount} onChange={e => setStockCount(e.target.value)} />
+                </div>
+              </div>
+
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Description</label>
+                <textarea className="form-input" style={styles.textarea} value={description} onChange={e => setDescription(e.target.value)} />
+              </div>
+
+              {error && <div style={styles.error}>{error}</div>}
+              {success && <div style={styles.success}>{success}</div>}
+
+              <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>
+                {editingProductId ? 'Update Product' : 'Create Product'}
+              </button>
+            </form>
+          )}
         </div>
       </div>
 
@@ -318,14 +333,14 @@ export default function Catalog({ token }) {
           <table style={styles.table}>
             <thead>
               <tr style={styles.thRow}>
-                <th style={styles.th}>SKU</th>
+                <th style={{ ...styles.th, whiteSpace: 'nowrap' }}>SKU</th>
                 <th style={styles.th}>Name</th>
-                <th style={styles.th}>Price</th>
+                <th style={{ ...styles.th, whiteSpace: 'nowrap' }}>Price</th>
                 <th style={styles.th}>Color</th>
                 <th style={styles.th}>Fabric</th>
-                <th style={styles.th}>Sizes</th>
-                <th style={styles.th}>Stock</th>
-                <th style={styles.th}>Actions</th>
+                <th style={{ ...styles.th, whiteSpace: 'nowrap' }}>Sizes</th>
+                <th style={{ ...styles.th, whiteSpace: 'nowrap' }}>Stock</th>
+                <th style={{ ...styles.th, whiteSpace: 'nowrap', textAlign: 'center' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -336,19 +351,19 @@ export default function Catalog({ token }) {
               ) : (
                 products.map((prod) => (
                   <tr key={prod.id} style={styles.trRow}>
-                    <td style={styles.td}>{prod.sku}</td>
+                    <td style={{ ...styles.td, whiteSpace: 'nowrap', fontSize: '0.8rem' }}>{prod.sku}</td>
                     <td style={styles.td}><strong>{prod.name}</strong></td>
-                    <td style={styles.td}>₹{prod.price}</td>
+                    <td style={{ ...styles.td, whiteSpace: 'nowrap' }}>₹{prod.price}</td>
                     <td style={styles.td}>{prod.color}</td>
                     <td style={styles.td}>{prod.fabric || 'N/A'}</td>
-                    <td style={styles.td}>{Array.isArray(prod.sizes) ? prod.sizes.join(', ') : prod.sizes}</td>
-                    <td style={styles.td}>
-                      <span className={`badge ${prod.stock_count > 0 ? 'badge-success' : 'badge-human'}`} style={{ textTransform: 'none' }}>
+                    <td style={{ ...styles.td, whiteSpace: 'nowrap' }}>{Array.isArray(prod.sizes) ? prod.sizes.join(', ') : prod.sizes}</td>
+                    <td style={{ ...styles.td, whiteSpace: 'nowrap' }}>
+                      <span className={`badge ${prod.stock_count > 0 ? 'badge-success' : 'badge-human'}`} style={{ textTransform: 'none', padding: '0.2rem 0.4rem', fontSize: '0.75rem' }}>
                         {prod.stock_count} left
                       </span>
                     </td>
-                    <td style={styles.td}>
-                      <div style={{ display: 'flex', gap: '0.4rem' }}>
+                    <td style={{ ...styles.td, whiteSpace: 'nowrap', textAlign: 'center' }}>
+                      <div style={{ display: 'inline-flex', gap: '0.3rem' }}>
                         <button 
                           className="btn btn-secondary" 
                           style={styles.actionBtn}
