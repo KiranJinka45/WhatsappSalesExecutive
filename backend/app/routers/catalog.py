@@ -41,6 +41,8 @@ async def upload_catalog(
             detail=f"Internal server error: {str(e)}"
         )
 
+from sqlalchemy import or_
+
 @router.get("/products", response_model=List[schemas.ProductOut])
 def get_products(
     q: Optional[str] = Query(None, description="Semantic search query"),
@@ -51,24 +53,47 @@ def get_products(
     color: Optional[str] = Query(None),
     fabric: Optional[str] = Query(None),
     in_stock: Optional[bool] = Query(None),
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     org: models.Organization = Depends(security.get_current_org)
 ):
-    # Base query filters are handled by SQLAlchemy tenant compiled query hook automatically
     query = db.query(models.Product)
 
-    # If semantic search is requested, query similarity using pgvector
-    if q:
-        from ..ai_service import get_embedding
-        query_embedding = get_embedding(q)
-        # We only retrieve products with completed embeddings for similarity orderings
-        query = query.filter(models.Product.embedding_status == "completed").order_by(
-            models.Product.embedding.cosine_distance(query_embedding)
+    # If search query is provided
+    if q and q.strip():
+        search_str = q.strip()
+        pattern = f"%{search_str}%"
+
+        # 1. First check for direct text matches (SKU, Name, Color, Fabric, Description)
+        text_match_query = query.filter(
+            or_(
+                models.Product.sku.ilike(pattern),
+                models.Product.name.ilike(pattern),
+                models.Product.color.ilike(pattern),
+                models.Product.fabric.ilike(pattern),
+                models.Product.description.ilike(pattern)
+            )
         )
+
+        text_results = text_match_query.all()
+        if text_results:
+            return text_results[offset:offset+limit]
+
+        # 2. Fallback to vector semantic search
+        try:
+            from ..ai_service import get_embedding
+            query_embedding = get_embedding(search_str)
+            if query_embedding and any(v != 0 for v in query_embedding):
+                query = query.filter(models.Product.embedding_status == "completed").order_by(
+                    models.Product.embedding.cosine_distance(query_embedding)
+                )
+            else:
+                query = query.order_by(models.Product.created_at.desc())
+        except Exception as err:
+            logger.warning(f"Vector search failed: {err}")
+            query = query.order_by(models.Product.created_at.desc())
     else:
-        # Default chronological ordering
         query = query.order_by(models.Product.created_at.desc())
 
     # Apply structured filters

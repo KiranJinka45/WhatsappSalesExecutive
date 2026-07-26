@@ -3,6 +3,8 @@ import { apiFetch } from '../api';
 
 export default function Catalog({ token }) {
   const [products, setProducts] = useState([]);
+  const [allProducts, setAllProducts] = useState([]);
+  const [noResultsFound, setNoResultsFound] = useState(false);
   const [editingProductId, setEditingProductId] = useState(null);
   const [sku, setSku] = useState('');
   const [name, setName] = useState('');
@@ -26,14 +28,27 @@ export default function Catalog({ token }) {
 
   const fetchProducts = async () => {
     try {
-      const path = searchQuery 
-        ? `/api/catalog/products?q=${encodeURIComponent(searchQuery)}`
-        : '/api/catalog/products';
-      
-      const res = await apiFetch(path);
-      if (res.ok) {
-        const data = await res.json();
-        setProducts(data);
+      if (!searchQuery.trim()) {
+        const res = await apiFetch('/api/catalog/products');
+        if (res.ok) {
+          const data = await res.json();
+          setProducts(data);
+          setAllProducts(data);
+          setNoResultsFound(false);
+        }
+      } else {
+        const res = await apiFetch(`/api/catalog/products?q=${encodeURIComponent(searchQuery.trim())}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.length > 0) {
+            setProducts(data);
+            setNoResultsFound(false);
+          } else {
+            // No matching results found -> fallback to showing all products + notification
+            setProducts(allProducts);
+            setNoResultsFound(true);
+          }
+        }
       }
     } catch (err) {
       console.error("Error fetching products:", err);
@@ -287,11 +302,17 @@ export default function Catalog({ token }) {
             type="text"
             className="form-input"
             style={styles.searchBar}
-            placeholder="🔍 Search products semantically..."
+            placeholder="🔍 Search SKU, name, color, fabric..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
+
+        {noResultsFound && (
+          <div style={styles.noResultNotice}>
+            ⚠️ No products found matching "<strong>{searchQuery}</strong>". Displaying all available inventory ({allProducts.length} items) below:
+          </div>
+        )}
 
         <div style={styles.tableWrapper}>
           <table style={styles.table}>
@@ -440,6 +461,16 @@ const styles = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  noResultNotice: {
+    padding: '0.75rem 1.25rem',
+    background: 'rgba(234, 179, 8, 0.1)',
+    color: '#eab308',
+    borderBottom: '1px solid rgba(234, 179, 8, 0.2)',
+    fontSize: '0.85rem',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
   },
   searchBar: {
     width: '280px',
