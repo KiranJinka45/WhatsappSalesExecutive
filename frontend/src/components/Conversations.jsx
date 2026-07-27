@@ -42,36 +42,56 @@ export default function Conversations({ token, brandPhone }) {
   useEffect(() => {
     fetchPendingApprovals();
 
-    const url = `${API_BASE_URL || ''}/api/conversations/stream`;
-    const eventSource = new EventSource(url, { withCredentials: true });
-
-    eventSource.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        const { event: eventType, data } = payload;
-        console.log("SSE Event Received:", eventType, data);
-
-        fetchConversations();
-
-        if (eventType === 'new_approval' || eventType === 'status_change') {
-          fetchPendingApprovals();
-        }
-
-        const currentSelectedId = selectedConvIdRef.current;
-        if (data && data.conversation_id && currentSelectedId === data.conversation_id) {
-          fetchChatDetail(currentSelectedId);
-        }
-      } catch (err) {
-        console.error("Error parsing SSE event data:", err);
+    // 1. Polling fallback every 4 seconds (handles SSE network drops)
+    const pollInterval = setInterval(() => {
+      fetchConversations();
+      const currentSelectedId = selectedConvIdRef.current;
+      if (currentSelectedId) {
+        fetchChatDetail(currentSelectedId);
       }
+    }, 4000);
+
+    // 2. Real-time SSE Connection
+    let eventSource = null;
+    const connectSSE = () => {
+      const url = `${API_BASE_URL || ''}/api/conversations/stream`;
+      eventSource = new EventSource(url, { withCredentials: true });
+
+      eventSource.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          const { event: eventType, data } = payload;
+          fetchConversations();
+
+          if (eventType === 'new_approval' || eventType === 'status_change') {
+            fetchPendingApprovals();
+          }
+
+          const currentSelectedId = selectedConvIdRef.current;
+          if (data && data.conversation_id && currentSelectedId === data.conversation_id) {
+            fetchChatDetail(currentSelectedId);
+          }
+        } catch (err) {
+          console.error("Error parsing SSE event data:", err);
+        }
+      };
+
+      eventSource.onerror = (err) => {
+        console.error("SSE Connection error, retrying...", err);
+        if (eventSource) {
+          eventSource.close();
+        }
+        setTimeout(connectSSE, 5000);
+      };
     };
 
-    eventSource.onerror = (err) => {
-      console.error("SSE Connection error:", err);
-    };
+    connectSSE();
 
     return () => {
-      eventSource.close();
+      clearInterval(pollInterval);
+      if (eventSource) {
+        eventSource.close();
+      }
     };
   }, []);
 
@@ -666,7 +686,22 @@ export default function Conversations({ token, brandPhone }) {
 
             <form onSubmit={handleSendSimulatedMessage} style={styles.simForm}>
               <div style={styles.inputGroup}>
-                <label style={styles.label}>Simulated Phone</label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label style={styles.label}>Simulated Phone</label>
+                  <button
+                    type="button"
+                    style={{ background: 'none', border: 'none', color: 'var(--accent-primary)', cursor: 'pointer', fontSize: '0.75rem', textDecoration: 'underline' }}
+                    onClick={() => {
+                      const randDigits = Math.floor(10000000 + Math.random() * 90000000);
+                      const names = ["Ananya Rao", "Priya Sharma", "Sita Reddy", "Lakshmi Devi", "Kiran Kumar"];
+                      const randName = names[Math.floor(Math.random() * names.length)];
+                      setSimPhone(`+9199${randDigits}`);
+                      setSimName(randName);
+                    }}
+                  >
+                    🎲 New Test Customer
+                  </button>
+                </div>
                 <input
                   type="text"
                   className="form-input"

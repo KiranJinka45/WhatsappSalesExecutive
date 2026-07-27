@@ -9,6 +9,10 @@ logger = logging.getLogger(__name__)
 def _mock_reply_fallback(customer_msg: str, catalog_context: List[Dict[str, Any]], policies_context: Dict[str, Any]) -> str:
     msg_lower = customer_msg.lower()
     
+    # 0. Greetings & Casual Pleasantries ("hi", "hello", "hi bro", "hey", "namaste")
+    if any(g in msg_lower for g in ["hi", "hello", "hey", "namaste", "good morning", "good evening"]) and not any(w in msg_lower for w in ["saree", "kurti", "dress", "lehenga", "under", "price", "cost", "timing", "open", "location", "shipping", "return"]):
+        return "Namaste! 🙏 Welcome to Pushpalatha Silks! How can I help you today? Are you looking for Banarasi sarees, Kanjeevaram silk sarees, or something specific for an occasion?"
+
     # 1. Store info & timings request
     if any(w in msg_lower for w in ["open", "hours", "timing", "address", "location", "where is", "map"]):
         addr = policies_context.get("address") or "Main Road, Dharmavaram"
