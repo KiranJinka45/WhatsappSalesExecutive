@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -76,7 +76,8 @@ def get_conversation_detail(
 @router.post("/{id}/takeover", response_model=schemas.ConversationOut, responses={404: {"description": "Conversation not found"}})
 def toggle_takeover(
     id: UUID,
-    status_val: str = Query(..., description="AI_ACTIVE, WAITING_APPROVAL, OWNER_ACTIVE, CLOSED"),
+    status_val: str,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     org: models.Organization = Depends(security.get_current_org),
     current_user: models.User = Depends(security.get_current_user)
@@ -95,13 +96,6 @@ def toggle_takeover(
     if status_val == "OWNER_ACTIVE":
         conv.assigned_user_id = current_user.id
     elif status_val == "AI_ACTIVE":
-        if conv.status != "AI_ACTIVE":
-            notification = models.Notification(
-                organization_id=org.id,
-                type="ConversationResumed",
-                status="unread"
-            )
-            db.add(notification)
         conv.assigned_user_id = None
         
     db.commit()
@@ -112,6 +106,16 @@ def toggle_takeover(
         "conversation_id": str(conv.id),
         "status": conv.status
     })
+
+    # If resumed to AI_ACTIVE, trigger AI processing for the latest customer message if unreplied
+    if status_val == "AI_ACTIVE":
+        last_msg = db.query(models.Message).filter(
+            models.Message.conversation_id == conv.id
+        ).order_by(models.Message.created_at.desc()).first()
+        if last_msg and last_msg.sender == "customer":
+            from .webhooks import process_message_async
+            background_tasks.add_task(process_message_async, str(org.id), str(conv.id), last_msg.content)
+
     return conv
 
 @router.post("/{id}/messages", response_model=schemas.MessageOut, status_code=status.HTTP_201_CREATED, responses={404: {"description": "Conversation not found"}})

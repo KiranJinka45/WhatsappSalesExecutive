@@ -753,13 +753,13 @@ async def receive_whatsapp_message(
         }
     })
 
-    # Reopen/resume conversation to AI_ACTIVE when customer messages again (if not waiting approval)
-    if conv.status not in ["AI_ACTIVE", "WAITING_APPROVAL"]:
-        conv.status = "AI_ACTIVE"
-        db.commit()
-
-    if conv.status == "WAITING_APPROVAL":
-        return {"status": "forwarded_to_agent"}
+    # Always enforce AI_ACTIVE mode on incoming customer messages and broadcast status change
+    conv.status = "AI_ACTIVE"
+    db.commit()
+    manager.broadcast(str(org.id), "status_change", {
+        "conversation_id": str(conv.id),
+        "status": "AI_ACTIVE"
+    })
 
     # Delegate LLM and database intensive work to FastAPI BackgroundTasks
     background_tasks.add_task(process_message_async, str(org.id), str(conv.id), message_text)
@@ -835,17 +835,13 @@ def receive_simulated_whatsapp_message(
         }
     })
 
-    # Reopen/resume conversation to AI_ACTIVE when customer messages again (if not waiting approval)
-    if conv.status not in ["AI_ACTIVE", "WAITING_APPROVAL"]:
-        conv.status = "AI_ACTIVE"
-        db.commit()
-        manager.broadcast(str(org_id), "status_change", {
-            "conversation_id": str(conv.id),
-            "status": "AI_ACTIVE"
-        })
-
-    if conv.status == "WAITING_APPROVAL":
-        return {"status": "forwarded_to_agent", "conversation_id": str(conv.id)}
+    # Always enforce AI_ACTIVE mode on incoming customer messages and broadcast status change
+    conv.status = "AI_ACTIVE"
+    db.commit()
+    manager.broadcast(str(org_id), "status_change", {
+        "conversation_id": str(conv.id),
+        "status": "AI_ACTIVE"
+    })
 
     # Delegate LLM processing to background_tasks to guarantee execution without Redis dependency
     background_tasks.add_task(process_message_async, str(org_id), str(conv.id), message_text)
