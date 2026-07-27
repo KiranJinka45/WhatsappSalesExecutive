@@ -60,16 +60,23 @@ def _mock_reply_fallback(customer_msg: str, catalog_context: List[Dict[str, Any]
 
 def generate_reply(
     customer_msg: str, 
-    history: List[Dict[str, str]], 
-    catalog_context: List[Dict[str, Any]], 
-    policies_context: Dict[str, Any],
-    detected_language: str = None,
-    detected_script: str = None,
-    customer_name: str = "Customer"
+    history: Optional[List[Dict[str, str]]] = None, 
+    catalog_context: Optional[List[Dict[str, Any]]] = None, 
+    policies_context: Optional[Dict[str, Any]] = None,
+    detected_language: Optional[str] = None,
+    detected_script: Optional[str] = None,
+    customer_name: str = "Customer",
+    **kwargs
 ) -> str:
     """
     Generates a reply grounded strictly in catalog and policy contexts.
     """
+    if history is None:
+        history = kwargs.get("history_context") or []
+    if catalog_context is None:
+        catalog_context = kwargs.get("catalog_ctx") or []
+    if policies_context is None:
+        policies_context = kwargs.get("policies_ctx") or {}
     # Format catalog context
     catalog_str = "No matching items found in the catalog."
     if catalog_context:
