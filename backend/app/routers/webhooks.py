@@ -61,10 +61,20 @@ def process_message_async(org_id: str, conv_id: str, message_text: str):
     
     try:
         conv = db.query(models.Conversation).filter(models.Conversation.id == conv_id).first()
-        if not conv or conv.status != "AI_ACTIVE":
+        if not conv:
             db.close()
             tenant_var.reset(token)
             return
+
+        # Always enforce AI_ACTIVE mode on customer queries unless waiting approval
+        if conv.status != "AI_ACTIVE" and conv.status != "WAITING_APPROVAL":
+            conv.status = "AI_ACTIVE"
+            db.commit()
+            from ..connection_manager import manager
+            manager.broadcast(str(org_id), "status_change", {
+                "conversation_id": str(conv.id),
+                "status": "AI_ACTIVE"
+            })
     except Exception as e:
         logger.error(f"Failed to load conversation: {e}", exc_info=True)
         last_exception = e
@@ -78,8 +88,13 @@ def process_message_async(org_id: str, conv_id: str, message_text: str):
                     db.organization_id = org_id
                     tenant_var.set(org_id)
                     conv = db.query(models.Conversation).filter(models.Conversation.id == conv_id).first()
-                    if not conv or conv.status != "AI_ACTIVE":
+                    if not conv:
                         break
+                
+                # Ensure status remains AI_ACTIVE
+                if conv.status != "AI_ACTIVE" and conv.status != "WAITING_APPROVAL":
+                    conv.status = "AI_ACTIVE"
+                    db.commit()
 
                 # Fetch last 10 messages for conversational context
                 msg_history = db.query(models.Message).filter(
@@ -820,6 +835,10 @@ def receive_simulated_whatsapp_message(
     if conv.status not in ["AI_ACTIVE", "WAITING_APPROVAL"]:
         conv.status = "AI_ACTIVE"
         db.commit()
+        manager.broadcast(str(org_id), "status_change", {
+            "conversation_id": str(conv.id),
+            "status": "AI_ACTIVE"
+        })
 
     if conv.status == "WAITING_APPROVAL":
         return {"status": "forwarded_to_agent", "conversation_id": str(conv.id)}

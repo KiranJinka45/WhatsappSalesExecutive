@@ -9,40 +9,54 @@ logger = logging.getLogger(__name__)
 def _mock_reply_fallback(customer_msg: str, catalog_context: List[Dict[str, Any]], policies_context: Dict[str, Any]) -> str:
     msg_lower = customer_msg.lower()
     
-    # 1. Store info request
+    # 1. Store info & timings request
     if any(w in msg_lower for w in ["open", "hours", "timing", "address", "location", "where is", "map"]):
-        addr = policies_context.get("address") or "our boutique store"
-        faqs = policies_context.get("faqs") or "We are open from 10:00 AM to 9:00 PM."
-        return f"Welcome! We are located at: {addr}. {faqs}"
+        addr = policies_context.get("address") or "Main Road, Dharmavaram"
+        faqs = policies_context.get("faqs") or "We are open every day from 10:00 AM to 9:00 PM."
+        return f"Namaste! 🙏 We are open every day from 10:00 AM to 9:00 PM. Our boutique is located at {addr}. Feel free to visit us or message anytime!"
         
     # 2. Logistics / Shipping / Delivery / COD / Returns
     elif any(w in msg_lower for w in ["cod", "cash on delivery", "cash", "shipping", "delivery", "charge", "days", "time", "return", "exchange", "refund", "policy"]):
-        shipping = policies_context.get("shipping") or "We support standard shipping to all major cities."
-        returns = policies_context.get("returns") or "Exchanges are supported within 7 days."
-        return f"{shipping} {returns}"
+        shipping = policies_context.get("shipping") or "We deliver across India within 3-5 business days."
+        returns = policies_context.get("returns") or "We offer a 7-day easy exchange policy for sizing."
+        return f"Namaste! {shipping} {returns} Let me know if you'd like to check any of our sarees!"
         
     # 3. Product Discovery / Inquiry
     elif catalog_context:
+        # Check price limit filter (e.g. "under 4000", "below 5000")
+        max_price = None
+        words = msg_lower.split()
+        for i, w in enumerate(words):
+            if w in ["under", "below", "less", "within"] and i + 1 < len(words):
+                clean_num = "".join([c for c in words[i+1] if c.isdigit()])
+                if clean_num:
+                    try:
+                        max_price = float(clean_num)
+                    except ValueError:
+                        pass
+        
+        filtered = catalog_context
+        if max_price:
+            filtered = [item for item in catalog_context if item.get('price', 0) <= max_price]
+            if not filtered:
+                filtered = catalog_context[:3]
+
         items_desc = []
-        for item in catalog_context:
-            desc = f"🌸 *{item.get('name')}* (SKU: {item.get('sku')})\n"
-            desc += f"   • Price: Rs. {item.get('price')}\n"
-            desc += f"   • Color: {item.get('color')}\n"
+        for item in filtered[:4]:
+            desc = f"🌸 *{item.get('name')}*\n"
+            desc += f"   • Price: ₹{item.get('price')}\n"
+            if item.get('color'):
+                desc += f"   • Color: {item.get('color')}\n"
             if item.get('fabric'):
                 desc += f"   • Fabric: {item.get('fabric')}\n"
-            if item.get('sizes'):
-                desc += f"   • Sizes: {', '.join(item.get('sizes'))}\n"
-            if item.get('stock_count') is not None:
-                desc += f"   • Stock: {item.get('stock_count')} available\n"
-            if item.get('image_urls'):
-                desc += f"   • Images: {item.get('image_urls')[0]}\n"
             items_desc.append(desc)
             
-        catalog_list = "\n".join(items_desc)
-        return f"Here are the items matching your query:\n\n{catalog_list}\n\nDo you want me to help you place an order?"
+        catalog_list = "\n\n".join(items_desc)
+        budget_str = f" under ₹{int(max_price)}" if max_price else ""
+        return f"Namaste! 🙏 Yes, we have beautiful saree options{budget_str} in stock right now:\n\n{catalog_list}\n\nWould you like me to share more details or photos of any of these?"
         
     else:
-        return "Thank you for asking! We have a gorgeous collection of sarees. We couldn't find a direct catalog match, but let me check with our backend store manager."
+        return "Namaste! 🙏 We have a gorgeous collection of sarees and traditional wear available. Let me know what color or price range you are looking for and I'll find the best options for you!"
 
 def generate_reply(
     customer_msg: str, 
