@@ -317,89 +317,57 @@ def process_message_async(org_id: str, conv_id: str, message_text: str):
             conv.metadata_ = meta
             
             if action == "wait_for_approval":
-                    # Transition conversation status
-                    conv.status = "WAITING_APPROVAL"
-                    conv.escalation_reason = reason
-                    db.commit()
-                    db.refresh(ai_msg)
-                    
-                    # Create Approval Request record with complete audit metadata
-                    approval = models.ApprovalRequest(
-                        conversation_id=conv.id,
-                        organization_id=org_id,
-                        status="pending",
-                        reason=reason,
-                        proposed_response=ai_reply,
-                        ai_recommendation=ai_recommendation,
-                        risk_score=risk_score,
-                        llm_model=model,
-                        prompt_version="v1.0",
-                        retrieval_ids=[item["sku"] for item in catalog_context] if catalog_context else [],
-                        grounding_score=1.0 if is_valid else 0.0,
-                        decision_engine_version=getattr(ai_service.decision_engine, "DECISION_ENGINE_VERSION", "v1.0"),
-                        rule_triggered=rule_triggered,
-                        metadata_={
-                            "intent": intent,
-                            "explainability_meta": explainability_meta
-                        }
-                    )
-                    db.add(approval)
-                    db.commit()
-                    db.refresh(approval)
-
-                    # Update approval_request_id in observability log and metadata
-                    observability_log["approval_request_id"] = str(approval.id)
-                    explainability_meta["observability"] = observability_log
-                    ai_msg.metadata_ = explainability_meta
-                    db.commit()
-                    
-                    logger.info(f"OBSERVABILITY METRICS: {json.dumps(observability_log)}")
-                    
-                    # Create a Persistent Notification
-                    notification = models.Notification(
-                        organization_id=org_id,
-                        approval_request_id=approval.id,
-                        type="ApprovalCreated",
-                        status="unread"
-                    )
-                    db.add(notification)
-                    db.commit()
-                    
-                    # Broadcast pending message and approval request to merchants
-                    from ..connection_manager import manager
-                    manager.broadcast(org_id, "new_message", {
-                        "conversation_id": str(conv.id),
-                        "message": {
-                            "id": str(ai_msg.id),
-                            "sender": ai_msg.sender,
-                            "message_type": ai_msg.message_type,
-                            "content": ai_msg.content,
-                            "status": ai_msg.status,
-                            "error_message": ai_msg.error_message,
-                            "created_at": ai_msg.created_at.isoformat()
-                        }
-                    })
-                    # Send human-escalation WhatsApp message to customer so they are not left in silence
-                    from ..bsp_service import send_whatsapp_message
-                    escalation_text = "I'm connecting you with a store manager. They will get back to you shortly."
-                    try:
-                        send_whatsapp_message(conv.customer_phone, escalation_text, org)
-                    except Exception as whatsapp_err:
-                        logger.error(f"Failed to send human-escalation WhatsApp message on approval hold: {whatsapp_err}")
-
-                    db.close()
-                    tenant_var.reset(token)
-                    return
-                
-                # Proceed to direct send
+                # Transition conversation status
+                conv.status = "WAITING_APPROVAL"
+                conv.escalation_reason = reason
                 db.commit()
                 db.refresh(ai_msg)
                 
+                # Create Approval Request record with complete audit metadata
+                approval = models.ApprovalRequest(
+                    conversation_id=conv.id,
+                    organization_id=org_uuid,
+                    status="pending",
+                    reason=reason,
+                    proposed_response=ai_reply,
+                    ai_recommendation=ai_recommendation,
+                    risk_score=risk_score,
+                    llm_model=model,
+                    prompt_version="v1.0",
+                    retrieval_ids=[item["sku"] for item in catalog_context] if catalog_context else [],
+                    grounding_score=1.0 if is_valid else 0.0,
+                    decision_engine_version=getattr(ai_service.decision_engine, "DECISION_ENGINE_VERSION", "v1.0"),
+                    rule_triggered=rule_triggered,
+                    metadata_={
+                        "intent": intent,
+                        "explainability_meta": explainability_meta
+                    }
+                )
+                db.add(approval)
+                db.commit()
+                db.refresh(approval)
+
+                # Update approval_request_id in observability log and metadata
+                observability_log["approval_request_id"] = str(approval.id)
+                explainability_meta["observability"] = observability_log
+                ai_msg.metadata_ = explainability_meta
+                db.commit()
+                
                 logger.info(f"OBSERVABILITY METRICS: {json.dumps(observability_log)}")
                 
-                # Broadcast AI response to connected merchant streams
+                # Create a Persistent Notification
+                notification = models.Notification(
+                    organization_id=org_uuid,
+                    approval_request_id=approval.id,
+                    type="ApprovalCreated",
+                    status="unread"
+                )
+                db.add(notification)
+                db.commit()
+                
+                # Broadcast pending message and approval request to merchants
                 from ..connection_manager import manager
-                manager.broadcast(org_id, "new_message", {
+                manager.broadcast(str(org_uuid), "new_message", {
                     "conversation_id": str(conv.id),
                     "message": {
                         "id": str(ai_msg.id),
@@ -411,46 +379,78 @@ def process_message_async(org_id: str, conv_id: str, message_text: str):
                         "created_at": ai_msg.created_at.isoformat()
                     }
                 })
-                
-                # Trigger real outbound BSP API payload dispatch with up to 3 retry attempts
+                # Send human-escalation WhatsApp message to customer so they are not left in silence
                 from ..bsp_service import send_whatsapp_message
-                send_whatsapp_res = {"status": "failed", "error": "Not started"}
-                for out_attempt in range(3):
-                    send_whatsapp_res = send_whatsapp_message(conv.customer_phone, ai_reply, org)
-                    if send_whatsapp_res.get("status") != "failed":
-                        break
-                    if out_attempt < 2:
-                        time.sleep(0.5 * (2 ** out_attempt))
-                
-                if send_whatsapp_res.get("status") == "failed":
-                    # In sandbox testing or unconfigured Meta Cloud API, preserve AI_ACTIVE status and deliver message to dashboard
-                    if settings.APP_ENV == "development" or "simulated" in str(conv.customer_phone).lower() or not org.whatsapp_business_account_id:
-                        logger.info(f"Sandbox/Local mode: AI reply delivered to dashboard inbox despite offline BSP: {send_whatsapp_res.get('error')}")
-                        ai_msg.status = "sent"
-                    else:
-                        conv.status = "OWNER_ACTIVE"
-                        ai_msg.status = "failed"
-                        ai_msg.error_message = send_whatsapp_res.get("error")
-                    db.commit()
-                    manager.broadcast(str(org_uuid), "new_message", {
-                        "conversation_id": str(conv.id),
-                        "message": {
-                            "id": str(ai_msg.id),
-                            "sender": ai_msg.sender,
-                            "message_type": ai_msg.message_type,
-                            "content": ai_msg.content,
-                            "status": ai_msg.status,
-                            "error_message": ai_msg.error_message,
-                            "created_at": ai_msg.created_at.isoformat()
-                        }
-                    })
-                    logger.warning(f"Outbound WhatsApp send result: {send_whatsapp_res.get('error')}")
-                else:
-                    logger.info(f"Generated and sent reply: '{ai_reply}' for customer: {conv.customer_phone}")
-                
+                escalation_text = "I'm connecting you with a store manager. They will get back to you shortly."
+                try:
+                    send_whatsapp_message(conv.customer_phone, escalation_text, org)
+                except Exception as whatsapp_err:
+                    logger.error(f"Failed to send human-escalation WhatsApp message on approval hold: {whatsapp_err}")
+
                 db.close()
                 tenant_var.reset(token)
                 return
+            
+            # Proceed to direct send
+            db.commit()
+            db.refresh(ai_msg)
+            
+            logger.info(f"OBSERVABILITY METRICS: {json.dumps(observability_log)}")
+            
+            # Broadcast AI response to connected merchant streams
+            from ..connection_manager import manager
+            manager.broadcast(str(org_uuid), "new_message", {
+                "conversation_id": str(conv.id),
+                "message": {
+                    "id": str(ai_msg.id),
+                    "sender": ai_msg.sender,
+                    "message_type": ai_msg.message_type,
+                    "content": ai_msg.content,
+                    "status": ai_msg.status,
+                    "error_message": ai_msg.error_message,
+                    "created_at": ai_msg.created_at.isoformat()
+                }
+            })
+            
+            # Trigger real outbound BSP API payload dispatch with up to 3 retry attempts
+            from ..bsp_service import send_whatsapp_message
+            send_whatsapp_res = {"status": "failed", "error": "Not started"}
+            for out_attempt in range(3):
+                send_whatsapp_res = send_whatsapp_message(conv.customer_phone, ai_reply, org)
+                if send_whatsapp_res.get("status") != "failed":
+                    break
+                if out_attempt < 2:
+                    time.sleep(0.5 * (2 ** out_attempt))
+            
+            if send_whatsapp_res.get("status") == "failed":
+                # In sandbox testing or unconfigured Meta Cloud API, preserve AI_ACTIVE status and deliver message to dashboard
+                if settings.APP_ENV == "development" or "simulated" in str(conv.customer_phone).lower() or not org.whatsapp_business_account_id:
+                    logger.info(f"Sandbox/Local mode: AI reply delivered to dashboard inbox despite offline BSP: {send_whatsapp_res.get('error')}")
+                    ai_msg.status = "sent"
+                else:
+                    conv.status = "OWNER_ACTIVE"
+                    ai_msg.status = "failed"
+                    ai_msg.error_message = send_whatsapp_res.get("error")
+                db.commit()
+                manager.broadcast(str(org_uuid), "new_message", {
+                    "conversation_id": str(conv.id),
+                    "message": {
+                        "id": str(ai_msg.id),
+                        "sender": ai_msg.sender,
+                        "message_type": ai_msg.message_type,
+                        "content": ai_msg.content,
+                        "status": ai_msg.status,
+                        "error_message": ai_msg.error_message,
+                        "created_at": ai_msg.created_at.isoformat()
+                    }
+                })
+                logger.warning(f"Outbound WhatsApp send result: {send_whatsapp_res.get('error')}")
+            else:
+                logger.info(f"Generated and sent reply: '{ai_reply}' for customer: {conv.customer_phone}")
+            
+            db.close()
+            tenant_var.reset(token)
+            return
 
         except Exception as e:
             logger.warning(f"Attempt {attempt + 1} failed in process_message_async: {e}")
