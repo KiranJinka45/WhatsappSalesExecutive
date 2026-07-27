@@ -84,8 +84,8 @@ class DecisionEngine:
         Evaluates rules in priority order and returns the first match.
         """
 
-        # ── 1. Grounding failure (highest priority) ──────────────────────
-        if not grounding_valid:
+        # ── 1. Grounding failure (highest priority for product claims) ──────────────
+        if not grounding_valid and intent not in ["general_query", "greeting", "store_info", "logistics", "shipping_exception", "policy", "faq"]:
             return DecisionResult(
                 action="wait_for_approval",
                 reason="Grounding validation failed – potential hallucination detected",
