@@ -138,185 +138,185 @@ def process_message_async(org_id: str, conv_id: str, message_text: str):
                 logger.error(f"Organization {org_uuid} not found in async task.")
                 break
 
-                # Semantic Search Context Retrieval
-                if intent in ["product_search", "inventory_query", "product_discovery", "similar_recommendation", "product_info", "availability"]:
-                    # Entity Extraction
-                    entities = ai_service.extract_entities(message_text, history_list)
-                    logger.info(f"Extracted entities for conversation {conv_id}: {entities}")
+            # Semantic Search Context Retrieval
+            if intent in ["product_search", "inventory_query", "product_discovery", "similar_recommendation", "product_info", "availability"]:
+                # Entity Extraction
+                entities = ai_service.extract_entities(message_text, history_list)
+                logger.info(f"Extracted entities for conversation {conv_id}: {entities}")
+                
+                # Build search string (hybrid search logic: combine text with entities)
+                search_query = message_text
+                if entities.get("product_type"):
+                    search_query += f" {entities['product_type']}"
                     
-                    # Build search string (hybrid search logic: combine text with entities)
-                    search_query = message_text
-                    if entities.get("product_type"):
-                        search_query += f" {entities['product_type']}"
+                query_embedding = ai_service.get_embedding(search_query)
+                
+                # Check if embedding is zero vector (fallback to text matching if offline/missing API key)
+                is_zero_vector = all(v == 0.0 for v in query_embedding) if query_embedding else True
+                
+                catalog_matches = []
+                if not is_zero_vector:
+                    try:
+                        catalog_matches = db.query(models.Product).order_by(
+                            models.Product.embedding.cosine_distance(query_embedding)
+                        ).limit(5).all()
+                    except Exception as vec_err:
+                        logger.warning(f"Vector search failed in database: {vec_err}. Falling back to keyword search.")
+                        catalog_matches = []
+
+                if is_zero_vector or not catalog_matches:
+                    # Offline / Exception fallback: keyword/text search on name, sku, description, color, fabric
+                    keywords = [w.strip() for w in search_query.lower().split() if len(w.strip()) > 2]
+                    filters = []
+                    for kw in keywords:
+                        filters.append(models.Product.name.ilike(f"%{kw}%"))
+                        filters.append(models.Product.sku.ilike(f"%{kw}%"))
+                        filters.append(models.Product.description.ilike(f"%{kw}%"))
+                        filters.append(models.Product.color.ilike(f"%{kw}%"))
+                        filters.append(models.Product.fabric.ilike(f"%{kw}%"))
+                    
+                    if filters:
+                        from sqlalchemy import or_
+                        catalog_matches = db.query(models.Product).filter(or_(*filters)).limit(5).all()
+                    else:
+                        catalog_matches = db.query(models.Product).limit(5).all()
                         
-                    query_embedding = ai_service.get_embedding(search_query)
-                    
-                    # Check if embedding is zero vector (fallback to text matching if offline/missing API key)
-                    is_zero_vector = all(v == 0.0 for v in query_embedding) if query_embedding else True
-                    
-                    catalog_matches = []
-                    if not is_zero_vector:
-                        try:
-                            catalog_matches = db.query(models.Product).order_by(
-                                models.Product.embedding.cosine_distance(query_embedding)
-                            ).limit(5).all()
-                        except Exception as vec_err:
-                            logger.warning(f"Vector search failed in database: {vec_err}. Falling back to keyword search.")
-                            catalog_matches = []
-
-                    if is_zero_vector or not catalog_matches:
-                        # Offline / Exception fallback: keyword/text search on name, sku, description, color, fabric
-                        keywords = [w.strip() for w in search_query.lower().split() if len(w.strip()) > 2]
-                        filters = []
-                        for kw in keywords:
-                            filters.append(models.Product.name.ilike(f"%{kw}%"))
-                            filters.append(models.Product.sku.ilike(f"%{kw}%"))
-                            filters.append(models.Product.description.ilike(f"%{kw}%"))
-                            filters.append(models.Product.color.ilike(f"%{kw}%"))
-                            filters.append(models.Product.fabric.ilike(f"%{kw}%"))
-                        
-                        if filters:
-                            from sqlalchemy import or_
-                            catalog_matches = db.query(models.Product).filter(or_(*filters)).limit(5).all()
-                        else:
-                            catalog_matches = db.query(models.Product).limit(5).all()
-                            
-                        # If still no keyword matches, fallback to returning the top 5 products
-                        if not catalog_matches:
-                            catalog_matches = db.query(models.Product).limit(5).all()
-                    
-                    catalog_context = [{
-                        "sku": p.sku,
-                        "name": p.name,
-                        "price": float(p.price),
-                        "color": p.color,
-                        "fabric": p.fabric,
-                        "sizes": p.sizes,
-                        "stock_count": p.stock_count,
-                        "description": p.description,
-                        "image_urls": p.image_urls,
-                        "video_urls": p.video_urls
-                    } for p in catalog_matches]
-                    
-                    # Retrieval Quality Layer Validation
-                    is_valid, filtered_context, escalation_reason = ai_service.validate_retrieval(intent, entities, catalog_context)
-                    
-                    # Compute rejected items
-                    raw_skus = {item["sku"] for item in catalog_context}
-                    filtered_skus = {item["sku"] for item in filtered_context}
-                    rejected_skus = list(raw_skus - filtered_skus)
-                    
-                    if not is_valid:
-                        logger.warning(f"Retrieval Quality Layer rejected context: {escalation_reason}")
-                    
-                    # Recommendation Ranker
-                    ranked_context = ai_service.rank_recommendations(filtered_context)
-                    catalog_context = ranked_context
-                    
-                    # Explainability Metadata
-                    explainability_meta = {
-                        "intent": intent,
-                        "entities_extracted": entities,
-                        "language": detected_lang,
-                        "script": detected_script,
-                        "retrieved_products": [item["sku"] for item in catalog_context],
-                        "rejected_products": rejected_skus,
-                        "escalation_reason": escalation_reason if not is_valid else None
-                    }
-                else:
-                    explainability_meta = {
-                        "intent": intent,
-                        "language": detected_lang,
-                        "script": detected_script
-                    }
-
-                # Generate grounded reply
-                policies_context = org.policies or {}
-                ai_reply = ai_service.generate_reply(
-                    message_text, 
-                    history_list, 
-                    catalog_context, 
-                    policies_context,
-                    detected_language=detected_lang,
-                    detected_script=detected_script,
-                    customer_name=conv.customer_name or "Customer"
-                )
-
-                # Run the deterministic Decision Engine to check safety policies & rules
-                decision_result = ai_service.decision_engine.evaluate(
-                    intent=intent,
-                    policies=policies_context,
-                    grounding_valid=is_valid,
-                    proposed_reply=ai_reply,
-                    entities=entities,
-                    catalog_context=catalog_context,
-                )
-                action = decision_result.action
-                reason = decision_result.reason
-                risk_score = decision_result.risk_score
-                ai_recommendation = decision_result.ai_recommendation
-                rule_triggered = decision_result.rule_triggered
+                    # If still no keyword matches, fallback to returning the top 5 products
+                    if not catalog_matches:
+                        catalog_matches = db.query(models.Product).limit(5).all()
                 
-                # End latency timer and compile telemetry
-                latency = time.time() - pipeline_start_time
+                catalog_context = [{
+                    "sku": p.sku,
+                    "name": p.name,
+                    "price": float(p.price),
+                    "color": p.color,
+                    "fabric": p.fabric,
+                    "sizes": p.sizes,
+                    "stock_count": p.stock_count,
+                    "description": p.description,
+                    "image_urls": p.image_urls,
+                    "video_urls": p.video_urls
+                } for p in catalog_matches]
                 
-                from ..ai.client import last_llm_meta
-                llm_meta = last_llm_meta.get()
-                provider = llm_meta.get("provider", "fallback")
-                model = llm_meta.get("model", "mock")
-                input_tokens = llm_meta.get("input_tokens", 0)
-                output_tokens = llm_meta.get("output_tokens", 0)
-                estimated_cost = llm_meta.get("estimated_cost", 0.0)
+                # Retrieval Quality Layer Validation
+                is_valid, filtered_context, escalation_reason = ai_service.validate_retrieval(intent, entities, catalog_context)
                 
-                observability_log = {
-                    "event": "ai_reply_observability",
-                    "conversation_id": str(conv.id),
-                    "organization_id": str(org.id),
-                    "provider": provider,
-                    "model": model,
-                    "prompt_version": "v1.0",
-                    "policy_version": "v1.0",
-                    "decision_engine_version": getattr(ai_service.decision_engine, "DECISION_ENGINE_VERSION", "v1.0"),
-                    "grounding_score": 1.0 if is_valid else 0.0,
-                    "retrieval_ids": [item["sku"] for item in catalog_context] if catalog_context else [],
-                    "latency": latency,
-                    "tokens": {
-                        "input_tokens": input_tokens,
-                        "output_tokens": output_tokens,
-                        "total_tokens": input_tokens + output_tokens
-                    },
-                    "estimated_cost": estimated_cost,
-                    "approval_request_id": None
+                # Compute rejected items
+                raw_skus = {item["sku"] for item in catalog_context}
+                filtered_skus = {item["sku"] for item in filtered_context}
+                rejected_skus = list(raw_skus - filtered_skus)
+                
+                if not is_valid:
+                    logger.warning(f"Retrieval Quality Layer rejected context: {escalation_reason}")
+                
+                # Recommendation Ranker
+                ranked_context = ai_service.rank_recommendations(filtered_context)
+                catalog_context = ranked_context
+                
+                # Explainability Metadata
+                explainability_meta = {
+                    "intent": intent,
+                    "entities_extracted": entities,
+                    "language": detected_lang,
+                    "script": detected_script,
+                    "retrieved_products": [item["sku"] for item in catalog_context],
+                    "rejected_products": rejected_skus,
+                    "escalation_reason": escalation_reason if not is_valid else None
                 }
-                explainability_meta["observability"] = observability_log
+            else:
+                explainability_meta = {
+                    "intent": intent,
+                    "language": detected_lang,
+                    "script": detected_script
+                }
 
-                # Log AI message (set status depending on action)
-                ai_msg_status = "pending" if action == "wait_for_approval" else "sent"
-                ai_msg = models.Message(
-                    conversation_id=conv.id,
-                    sender="ai",
-                    message_type="text",
-                    content=ai_reply,
-                    status=ai_msg_status,
-                    metadata_=explainability_meta
-                )
-                db.add(ai_msg)
+            # Generate grounded reply
+            policies_context = org.policies or {}
+            ai_reply = ai_service.generate_reply(
+                message_text, 
+                history_list, 
+                catalog_context, 
+                policies_context,
+                detected_language=detected_lang,
+                detected_script=detected_script,
+                customer_name=conv.customer_name or "Customer"
+            )
+
+            # Run the deterministic Decision Engine to check safety policies & rules
+            decision_result = ai_service.decision_engine.evaluate(
+                intent=intent,
+                policies=policies_context,
+                grounding_valid=is_valid,
+                proposed_reply=ai_reply,
+                entities=entities,
+                catalog_context=catalog_context,
+            )
+            action = decision_result.action
+            reason = decision_result.reason
+            risk_score = decision_result.risk_score
+            ai_recommendation = decision_result.ai_recommendation
+            rule_triggered = decision_result.rule_triggered
+            
+            # End latency timer and compile telemetry
+            latency = time.time() - pipeline_start_time
+            
+            from ..ai.client import last_llm_meta
+            llm_meta = last_llm_meta.get()
+            provider = llm_meta.get("provider", "fallback")
+            model = llm_meta.get("model", "mock")
+            input_tokens = llm_meta.get("input_tokens", 0)
+            output_tokens = llm_meta.get("output_tokens", 0)
+            estimated_cost = llm_meta.get("estimated_cost", 0.0)
                 
-                # Update conversation metadata with preferences/budget tracking
-                meta = dict(conv.metadata_ or {})
-                if "under" in message_text.lower():
-                     words = message_text.lower().split()
-                     for i, w in enumerate(words):
-                          if w == "under" and i+1 < len(words):
-                               try:
-                                   clean_price = "".join([c for c in words[i+1] if c.isdigit()])
-                                   if clean_price:
-                                       meta["budget_limit"] = int(clean_price)
-                               except ValueError:
-                                   pass
-                conv.metadata_ = meta
-                
-                if action == "wait_for_approval":
+            observability_log = {
+                "event": "ai_reply_observability",
+                "conversation_id": str(conv.id),
+                "organization_id": str(org_uuid),
+                "provider": provider,
+                "model": model,
+                "prompt_version": "v1.0",
+                "policy_version": "v1.0",
+                "decision_engine_version": getattr(ai_service.decision_engine, "DECISION_ENGINE_VERSION", "v1.0"),
+                "grounding_score": 1.0 if is_valid else 0.0,
+                "retrieval_ids": [item["sku"] for item in catalog_context] if catalog_context else [],
+                "latency": latency,
+                "tokens": {
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "total_tokens": input_tokens + output_tokens
+                },
+                "estimated_cost": estimated_cost,
+                "approval_request_id": None
+            }
+            explainability_meta["observability"] = observability_log
+
+            # Log AI message (set status depending on action)
+            ai_msg_status = "pending" if action == "wait_for_approval" else "sent"
+            ai_msg = models.Message(
+                conversation_id=conv.id,
+                sender="ai",
+                message_type="text",
+                content=ai_reply,
+                status=ai_msg_status,
+                metadata_=explainability_meta
+            )
+            db.add(ai_msg)
+            
+            # Update conversation metadata with preferences/budget tracking
+            meta = dict(conv.metadata_ or {})
+            if "under" in message_text.lower():
+                 words = message_text.lower().split()
+                 for i, w in enumerate(words):
+                      if w == "under" and i+1 < len(words):
+                           try:
+                               clean_price = "".join([c for c in words[i+1] if c.isdigit()])
+                               if clean_price:
+                                   meta["budget_limit"] = int(clean_price)
+                           except ValueError:
+                               pass
+            conv.metadata_ = meta
+            
+            if action == "wait_for_approval":
                     # Transition conversation status
                     conv.status = "WAITING_APPROVAL"
                     conv.escalation_reason = reason
@@ -423,23 +423,28 @@ def process_message_async(org_id: str, conv_id: str, message_text: str):
                         time.sleep(0.5 * (2 ** out_attempt))
                 
                 if send_whatsapp_res.get("status") == "failed":
-                    conv.status = "OWNER_ACTIVE"
-                    ai_msg.status = "failed"
-                    ai_msg.error_message = send_whatsapp_res.get("error")
+                    # In sandbox testing or unconfigured Meta Cloud API, preserve AI_ACTIVE status and deliver message to dashboard
+                    if settings.APP_ENV == "development" or "simulated" in str(conv.customer_phone).lower() or not org.whatsapp_business_account_id:
+                        logger.info(f"Sandbox/Local mode: AI reply delivered to dashboard inbox despite offline BSP: {send_whatsapp_res.get('error')}")
+                        ai_msg.status = "sent"
+                    else:
+                        conv.status = "OWNER_ACTIVE"
+                        ai_msg.status = "failed"
+                        ai_msg.error_message = send_whatsapp_res.get("error")
                     db.commit()
-                    manager.broadcast(org_id, "new_message", {
+                    manager.broadcast(str(org_uuid), "new_message", {
                         "conversation_id": str(conv.id),
                         "message": {
                             "id": str(ai_msg.id),
                             "sender": ai_msg.sender,
                             "message_type": ai_msg.message_type,
                             "content": ai_msg.content,
-                            "status": "failed",
+                            "status": ai_msg.status,
                             "error_message": ai_msg.error_message,
                             "created_at": ai_msg.created_at.isoformat()
                         }
                     })
-                    logger.error(f"Outbound WhatsApp send failed permanently after retries: {send_whatsapp_res.get('error')}")
+                    logger.warning(f"Outbound WhatsApp send result: {send_whatsapp_res.get('error')}")
                 else:
                     logger.info(f"Generated and sent reply: '{ai_reply}' for customer: {conv.customer_phone}")
                 
