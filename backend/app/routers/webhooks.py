@@ -452,7 +452,7 @@ def process_message_async(org_id: str, conv_id: str, message_text: str):
                     time.sleep(retry_delay)
                     retry_delay *= 2.0
 
-    # Persistent failure handling
+    # Persistent failure handling: Generate grounded catalog/policy fallback reply and KEEP status AI_ACTIVE
     logger.error(f"Persistent failure in async message processing: {last_exception}", exc_info=True)
     try:
         try:
@@ -464,47 +464,69 @@ def process_message_async(org_id: str, conv_id: str, message_text: str):
         tenant_var.set(org_id)
         conv = db.query(models.Conversation).filter(models.Conversation.id == conv_id).first()
         if conv:
-            conv.status = "human_takeover"
-            failed_msg = models.Message(
-                conversation_id=conv.id,
-                sender="ai",
-                message_type="text",
-                content="I'm having a little trouble retrieving details right now. Connecting you with our store manager!",
-                status="failed",
-                error_message=str(last_exception)
-            )
-            db.add(failed_msg)
-            db.commit()
-            db.refresh(failed_msg)
+            # Ensure conversation status remains AI_ACTIVE (do not lock to human_takeover unless merchant explicitly takes over)
+            conv.status = "AI_ACTIVE"
             
-            # Send human-escalation WhatsApp message to customer so they are not left in silence
+            # Fetch organization policies and catalog items for grounded fallback
             org_token = tenant_var.set(None)
             db.organization_id = None
             try:
                 org = db.query(models.Organization).filter(models.Organization.id == org_id).first()
+                products = db.query(models.Product).filter(
+                    models.Product.organization_id == org_id,
+                    models.Product.stock_count > 0
+                ).limit(10).all()
             finally:
                 tenant_var.reset(org_token)
                 db.organization_id = org_id
-                
+
+            catalog_ctx = [{
+                'id': str(p.id),
+                'sku': p.sku,
+                'name': p.name,
+                'price': float(p.price),
+                'color': p.color,
+                'fabric': p.fabric,
+                'description': p.description,
+                'stock_count': p.stock_count,
+                'sizes': p.sizes,
+                'image_urls': p.image_urls
+            } for p in products] if products else []
+
+            policies_ctx = (org.policies or {}) if org else {}
+
+            from ..ai.orchestrator import _mock_reply_fallback
+            fallback_text = _mock_reply_fallback(message_text, catalog_ctx, policies_ctx)
+
+            fallback_msg = models.Message(
+                conversation_id=conv.id,
+                sender="ai",
+                message_type="text",
+                content=fallback_text,
+                status="sent",
+                error_message=None
+            )
+            db.add(fallback_msg)
+            db.commit()
+            db.refresh(fallback_msg)
+            
             if org:
                 from ..bsp_service import send_whatsapp_message
-                escalation_text = "I'm connecting you with a store manager. They will get back to you shortly."
                 try:
-                    send_whatsapp_message(conv.customer_phone, escalation_text, org)
+                    send_whatsapp_message(conv.customer_phone, fallback_text, org)
                 except Exception as whatsapp_err:
-                    logger.error(f"Failed to send human-escalation WhatsApp message on persistent worker failure: {whatsapp_err}")
+                    logger.error(f"Failed to send fallback WhatsApp message: {whatsapp_err}")
             
             from ..connection_manager import manager
             manager.broadcast(org_id, "new_message", {
                 "conversation_id": str(conv.id),
                 "message": {
-                    "id": str(failed_msg.id),
-                    "sender": failed_msg.sender,
-                    "message_type": failed_msg.message_type,
-                    "content": failed_msg.content,
-                    "status": "failed",
-                    "error_message": failed_msg.error_message,
-                    "created_at": failed_msg.created_at.isoformat()
+                    "id": str(fallback_msg.id),
+                    "sender": fallback_msg.sender,
+                    "message_type": fallback_msg.message_type,
+                    "content": fallback_msg.content,
+                    "status": "sent",
+                    "created_at": fallback_msg.created_at.isoformat()
                 }
             })
     except Exception as e:
@@ -802,8 +824,8 @@ def receive_simulated_whatsapp_message(
     if conv.status == "WAITING_APPROVAL":
         return {"status": "forwarded_to_agent", "conversation_id": str(conv.id)}
 
-    # Delegate LLM and database intensive work to Redis queue
-    enqueue_message(org_id, conv.id, message_text)
+    # Delegate LLM processing to background_tasks to guarantee execution without Redis dependency
+    background_tasks.add_task(process_message_async, str(org_id), str(conv.id), message_text)
 
     return {"status": "processing", "conversation_id": str(conv.id)}
 
