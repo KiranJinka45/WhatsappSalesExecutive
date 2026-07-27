@@ -66,6 +66,12 @@ def do_orm_execute_tenant_filter(orm_execute_state):
     org_id = getattr(session, "organization_id", None) or tenant_var.get()
     
     if org_id is not None:
+        import uuid
+        if isinstance(org_id, str):
+            try:
+                org_id = uuid.UUID(org_id)
+            except ValueError:
+                pass
         if (
             orm_execute_state.is_select
             and not orm_execute_state.is_column_load

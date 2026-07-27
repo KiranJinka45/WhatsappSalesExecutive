@@ -55,12 +55,16 @@ def process_message_async(org_id: str, conv_id: str, message_text: str):
     retry_delay = 1.0
     last_exception = None
 
+    import uuid
+    org_uuid = uuid.UUID(org_id) if isinstance(org_id, str) else org_id
+    conv_uuid = uuid.UUID(conv_id) if isinstance(conv_id, str) else conv_id
+
     db = SessionLocal()
-    db.organization_id = org_id
-    token = tenant_var.set(org_id)
+    db.organization_id = org_uuid
+    token = tenant_var.set(org_uuid)
     
     try:
-        conv = db.query(models.Conversation).filter(models.Conversation.id == conv_id).first()
+        conv = db.query(models.Conversation).filter(models.Conversation.id == conv_uuid).first()
         if not conv:
             db.close()
             tenant_var.reset(token)
