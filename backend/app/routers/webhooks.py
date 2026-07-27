@@ -56,104 +56,87 @@ def process_message_async(org_id: str, conv_id: str, message_text: str):
     last_exception = None
 
     import uuid
-    org_uuid = uuid.UUID(org_id) if isinstance(org_id, str) else org_id
-    conv_uuid = uuid.UUID(conv_id) if isinstance(conv_id, str) else conv_id
+    org_uuid = uuid.UUID(str(org_id)) if not isinstance(org_id, uuid.UUID) else org_id
+    conv_uuid = uuid.UUID(str(conv_id)) if not isinstance(conv_id, uuid.UUID) else conv_id
 
     db = SessionLocal()
     db.organization_id = org_uuid
     token = tenant_var.set(org_uuid)
     
-    try:
-        conv = db.query(models.Conversation).filter(models.Conversation.id == conv_uuid).first()
-        if not conv:
-            db.close()
-            tenant_var.reset(token)
-            return
-
-        # Always enforce AI_ACTIVE mode on customer queries unless waiting approval
-        if conv.status != "AI_ACTIVE" and conv.status != "WAITING_APPROVAL":
-            conv.status = "AI_ACTIVE"
-            db.commit()
-            from ..connection_manager import manager
-            manager.broadcast(str(org_id), "status_change", {
-                "conversation_id": str(conv.id),
-                "status": "AI_ACTIVE"
-            })
-    except Exception as e:
-        logger.error(f"Failed to load conversation: {e}", exc_info=True)
-        last_exception = e
-
-    if last_exception is None:
-        for attempt in range(max_retries):
-            try:
-                if attempt > 0:
+    for attempt in range(max_retries):
+        try:
+            if attempt > 0:
+                try:
                     db.close()
-                    db = SessionLocal()
-                    db.organization_id = org_id
-                    tenant_var.set(org_id)
-                    conv = db.query(models.Conversation).filter(models.Conversation.id == conv_id).first()
-                    if not conv:
-                        break
+                except Exception:
+                    pass
+                db = SessionLocal()
+                db.organization_id = org_uuid
+                tenant_var.set(org_uuid)
+
+            conv = db.query(models.Conversation).filter(models.Conversation.id == conv_uuid).first()
+            if not conv:
+                break
+            
+            # Ensure status remains AI_ACTIVE
+            if conv.status != "AI_ACTIVE" and conv.status != "WAITING_APPROVAL":
+                conv.status = "AI_ACTIVE"
+                db.commit()
+
+            # Fetch last 10 messages for conversational context
+            msg_history = db.query(models.Message).filter(
+                models.Message.conversation_id == conv.id
+            ).order_by(models.Message.created_at.asc()).limit(10).all()
+            
+            history_list = [{"sender": m.sender, "content": m.content} for m in msg_history]
                 
-                # Ensure status remains AI_ACTIVE
-                if conv.status != "AI_ACTIVE" and conv.status != "WAITING_APPROVAL":
-                    conv.status = "AI_ACTIVE"
+            # Start latency timer
+            pipeline_start_time = time.time()
+
+            # Intent Classification
+            intent = ai_service.classify_intent(message_text, history_list)
+            logger.info(f"Classified intent for conversation {conv_id}: {intent}")
+
+            # Language & Script Detection
+            try:
+                lang_data = ai_service.detect_language(message_text, history_list)
+            except Exception as lang_err:
+                logger.error(f"Language detection failed: {lang_err}")
+                lang_data = {"language": "en", "script": "latin", "confidence": 1.0}
+            
+            detected_lang = lang_data.get("language", "en")
+            detected_script = lang_data.get("script", "latin")
+            logger.info(f"Detected language for message: {detected_lang} ({detected_script})")
+
+            # Update the customer's message record with the detected language
+            try:
+                cust_msg = db.query(models.Message).filter(
+                    models.Message.conversation_id == conv.id,
+                    models.Message.sender == "customer"
+                ).order_by(models.Message.created_at.desc()).first()
+                if cust_msg:
+                    cust_msg.detected_language = detected_lang
                     db.commit()
+            except Exception as db_err:
+                logger.error(f"Failed to save detected language to customer message: {db_err}")
+            
+            # Initialize entities fallback
+            entities = {}
+            is_valid = True
 
-                # Fetch last 10 messages for conversational context
-                msg_history = db.query(models.Message).filter(
-                    models.Message.conversation_id == conv.id
-                ).order_by(models.Message.created_at.asc()).limit(10).all()
+            # Context retrieval initialization
+            catalog_context = []
+            org_token = tenant_var.set(None)
+            db.organization_id = None
+            try:
+                org = db.query(models.Organization).filter(models.Organization.id == org_uuid).first()
+            finally:
+                tenant_var.reset(org_token)
+                db.organization_id = org_uuid
                 
-                history_list = [{"sender": m.sender, "content": m.content} for m in msg_history]
-                
-                # Start latency timer
-                pipeline_start_time = time.time()
-
-                # Intent Classification
-                intent = ai_service.classify_intent(message_text, history_list)
-                logger.info(f"Classified intent for conversation {conv_id}: {intent}")
-
-                # Language & Script Detection
-                try:
-                    lang_data = ai_service.detect_language(message_text, history_list)
-                except Exception as lang_err:
-                    logger.error(f"Language detection failed: {lang_err}")
-                    lang_data = {"language": "en", "script": "latin", "confidence": 1.0}
-                
-                detected_lang = lang_data.get("language", "en")
-                detected_script = lang_data.get("script", "latin")
-                logger.info(f"Detected language for message: {detected_lang} ({detected_script})")
-
-                # Update the customer's message record with the detected language
-                try:
-                    cust_msg = db.query(models.Message).filter(
-                        models.Message.conversation_id == conv.id,
-                        models.Message.sender == "customer"
-                    ).order_by(models.Message.created_at.desc()).first()
-                    if cust_msg:
-                        cust_msg.detected_language = detected_lang
-                        db.commit()
-                except Exception as db_err:
-                    logger.error(f"Failed to save detected language to customer message: {db_err}")
-                
-                # Initialize entities fallback
-                entities = {}
-                is_valid = True
-
-                # Context retrieval initialization
-                catalog_context = []
-                org_token = tenant_var.set(None)
-                db.organization_id = None
-                try:
-                    org = db.query(models.Organization).filter(models.Organization.id == org_id).first()
-                finally:
-                    tenant_var.reset(org_token)
-                    db.organization_id = org_id
-                    
-                if not org:
-                    logger.error(f"Organization {org_id} not found in async task.")
-                    break
+            if not org:
+                logger.error(f"Organization {org_uuid} not found in async task.")
+                break
 
                 # Semantic Search Context Retrieval
                 if intent in ["product_search", "inventory_query", "product_discovery", "similar_recommendation", "product_info", "availability"]:
@@ -479,9 +462,9 @@ def process_message_async(org_id: str, conv_id: str, message_text: str):
         except Exception:
             pass
         db = SessionLocal()
-        db.organization_id = org_id
-        tenant_var.set(org_id)
-        conv = db.query(models.Conversation).filter(models.Conversation.id == conv_id).first()
+        db.organization_id = org_uuid
+        tenant_var.set(org_uuid)
+        conv = db.query(models.Conversation).filter(models.Conversation.id == conv_uuid).first()
         if conv:
             # Ensure conversation status remains AI_ACTIVE (do not lock to human_takeover unless merchant explicitly takes over)
             conv.status = "AI_ACTIVE"
@@ -490,14 +473,14 @@ def process_message_async(org_id: str, conv_id: str, message_text: str):
             org_token = tenant_var.set(None)
             db.organization_id = None
             try:
-                org = db.query(models.Organization).filter(models.Organization.id == org_id).first()
+                org = db.query(models.Organization).filter(models.Organization.id == org_uuid).first()
                 products = db.query(models.Product).filter(
-                    models.Product.organization_id == org_id,
+                    models.Product.organization_id == org_uuid,
                     models.Product.stock_count > 0
                 ).limit(10).all()
             finally:
                 tenant_var.reset(org_token)
-                db.organization_id = org_id
+                db.organization_id = org_uuid
 
             catalog_ctx = [{
                 'id': str(p.id),
