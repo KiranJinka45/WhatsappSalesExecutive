@@ -794,6 +794,9 @@ def receive_simulated_whatsapp_message(
         db.add(conv)
         db.commit()
         db.refresh(conv)
+    else:
+        conv.status = "AI_ACTIVE"
+        db.commit()
 
     # Log Customer message synchronously
     cust_msg = models.Message(
