@@ -13,6 +13,10 @@ def validate_retrieval(
     Ensures that the semantic search results actually match the strict entities extracted (e.g. price limits, availability).
     Returns: (is_valid, filtered_catalog, escalation_reason)
     """
+    # Non-catalog conversational intents (greetings, store hours, logistics, policies) do not require catalog items
+    if intent in ["greeting", "store_info", "logistics", "policy", "faq", "general", "other"]:
+        return True, catalog_context or [], ""
+
     if not catalog_context:
         return False, [], "No catalog items found."
 
