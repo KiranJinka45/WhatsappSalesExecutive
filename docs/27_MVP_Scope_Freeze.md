@@ -35,3 +35,64 @@ To deliver a functional, secure, multi-tenant AI Sales Assistant on WhatsApp tha
 - **Instagram / Facebook DM Integrations**: The system integrates solely with WhatsApp Business API webhooks.
 - **Multi-Brand Catalog Aggregator**: Each store manages isolated, independent multi-tenant catalogs.
 - **Marketing Automation / Campaigns**: No bulk message broadcast lists or promotion newsletters dispatch.
+
+---
+
+## 4. Architecture Freeze Agreement
+
+> **Architecture Freeze Notice – Effective Immediately**
+>
+> The MVP architecture is now frozen.
+>
+> No new architectural layers, AI modules, database tables, or core APIs will be introduced unless justified by observed pilot evidence.
+>
+> Engineering effort is now directed toward customer validation, operational stability, merchant experience, and measurable business outcomes.
+
+---
+
+## 5. Version 1.0 Exit Criteria
+
+Before transitioning from Pilot/Iteration to Public Beta, the product must satisfy the following qualitative and quantitative criteria:
+
+### A. Technical Gates
+* **CI/CD Integration**: Clean, passing automated build pipeline.
+* **Test Suite**: All required CI gates pass.
+* **Goldens**: AI evaluation regression tests and goldens pass with no drift.
+* **Static Analysis**: Code checks (Ruff, Mypy) pass with zero errors.
+* **Security & Vulnerabilities**: Dependency scan, secret scan, container image scan, and license compliance check are clean.
+
+### B. AI Engine Gates
+* **Intent Accuracy**: Target `> 90%` classification accuracy across test datasets.
+* **Hallucination Rate**: No verified catalog or order fact discrepancies in release-blocking evaluation datasets and production pilot reviews:
+  - `0` hallucinated catalog attributes.
+  - `0` hallucinated prices.
+  - `0` hallucinated inventory levels.
+  - `0` fabricated order statuses.
+* **Replay logs**: Successfully exported JSON/PDF templates verified.
+* **Explainability**: AI Recommendation Inspector verified in the merchant dashboard.
+
+### C. Product & Business Gates (Real Metrics)
+* **Real Merchants**: $\ge 3$ active, non-synthetic merchants onboarded.
+* **Conversation Corpus**: $\ge 500$ real customer conversations processed.
+* **Merchant Satisfaction**: Average score of $> 8/10$ (Simulated evaluation: $9.2/10$).
+* **AI Containment Rate**: Containment of $> 70\%$ of conversations without emergency handover.
+* **Setup & Onboarding Time**: Average setup time $< 30$ minutes per merchant.
+
+---
+
+## 6. The 9-Phase Roadmap
+
+```
+[ Phase 1: Engineering ] ──► [ Phase 2: Architecture ] ──► [ Phase 3: AI Eval ] ──► [ Phase 4: Dashboard ]
+      (Complete)                   (Complete)                  (Complete)             (Complete)
+                                                                                          │
+┌─────────────────────────────────────────────────────────────────────────────────────────┘
+│
+└──► [ Phase 5: Real Pilot ] ──► [ Phase 6: Pilot Learning ] ──► [ Phase 7: Design Partner ]
+        (Active)
+           │
+┌──────────┘
+│
+└──► [ Phase 8: First Paying Customer ] ──► [ Phase 9: Public Beta ]
+```
+

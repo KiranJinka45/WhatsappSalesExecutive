@@ -25,7 +25,7 @@ def verify_meta_signature(payload: bytes, signature_header: str, app_secret: str
     ).hexdigest()
     return hmac.compare_digest(expected_sig, computed_sig)
 
-@router.get("/whatsapp")
+@router.get("/whatsapp", response_class=Response)
 def verify_whatsapp_handshake(
     hub_mode: str = Query(None, alias="hub.mode"),
     hub_challenge: str = Query(None, alias="hub.challenge"),
@@ -712,8 +712,8 @@ async def receive_whatsapp_message(
         }
     })
 
-    # Reopen closed or owner-active conversations when customer messages again
-    if conv.status in ["CLOSED", "OWNER_ACTIVE"]:
+    # Reopen/resume conversation to AI_ACTIVE when customer messages again (if not waiting approval)
+    if conv.status not in ["AI_ACTIVE", "WAITING_APPROVAL"]:
         conv.status = "AI_ACTIVE"
         db.commit()
 
@@ -794,12 +794,12 @@ def receive_simulated_whatsapp_message(
         }
     })
 
-    # Reopen closed conversations if customer messages again
-    if conv.status == "CLOSED":
+    # Reopen/resume conversation to AI_ACTIVE when customer messages again (if not waiting approval)
+    if conv.status not in ["AI_ACTIVE", "WAITING_APPROVAL"]:
         conv.status = "AI_ACTIVE"
         db.commit()
 
-    if conv.status in ["OWNER_ACTIVE", "WAITING_APPROVAL"]:
+    if conv.status == "WAITING_APPROVAL":
         return {"status": "forwarded_to_agent", "conversation_id": str(conv.id)}
 
     # Delegate LLM and database intensive work to Redis queue
@@ -822,6 +822,7 @@ def receive_payment_webhook(payload: PaymentPayload, db: Session = Depends(get_d
     # Temporarily bypass tenant filtering to find conversation globally by customer phone
     token = tenant_var.set(None)
     db.organization_id = None
+    db.is_admin = True
     try:
         conv = db.query(models.Conversation).filter(
             models.Conversation.customer_phone == payload.customer_phone
@@ -849,4 +850,5 @@ def receive_payment_webhook(payload: PaymentPayload, db: Session = Depends(get_d
         })
         return {"status": "success", "conversation_id": str(conv.id)}
     finally:
+        db.is_admin = False
         tenant_var.reset(token)

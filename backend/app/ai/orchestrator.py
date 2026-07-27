@@ -50,7 +50,8 @@ def generate_reply(
     catalog_context: List[Dict[str, Any]], 
     policies_context: Dict[str, Any],
     detected_language: str = None,
-    detected_script: str = None
+    detected_script: str = None,
+    customer_name: str = "Customer"
 ) -> str:
     """
     Generates a reply grounded strictly in catalog and policy contexts.

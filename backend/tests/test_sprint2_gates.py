@@ -33,6 +33,9 @@ class TestSprint2Gates(unittest.TestCase):
         self.auth_headers = self._create_owner()
 
     def _create_owner(self):
+        from app.routers.auth import login_limiter
+        login_limiter.requests.clear()
+
         signup_data = {
             "email": "owner@closely.com",
             "name": "Kiran Boss",
@@ -127,14 +130,14 @@ class TestSprint2Gates(unittest.TestCase):
         invalid_csv_content = b"name,price,color,category,fabric,stock_count\nSaree,4500.00,Red,Sarees,Silk,10"
         files = {"file": ("invalid.csv", invalid_csv_content, "text/csv")}
         res = self.client.post("/api/catalog/upload", files=files, headers=self.auth_headers)
-        self.assertEqual(res.status_code, 500)  # In our uploader, errors are wrapped in 500
+        self.assertEqual(res.status_code, 400)  # In our uploader, errors are wrapped in 400
         self.assertIn("Missing required columns", res.json()["detail"])
 
         # Negative price uploader check
         invalid_price_content = b"sku,name,price,color,category,fabric,stock_count\nSKU001,Saree,-4500.00,Red,Sarees,Silk,10"
         files = {"file": ("invalid_price.csv", invalid_price_content, "text/csv")}
         res = self.client.post("/api/catalog/upload", files=files, headers=self.auth_headers)
-        self.assertEqual(res.status_code, 500)
+        self.assertEqual(res.status_code, 400)
         self.assertIn("Price cannot be negative", res.json()["detail"])
 
     def test_sse_connection_manager_broadcast(self):

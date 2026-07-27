@@ -1,0 +1,3 @@
+FAILED MSG ID: e082da3f-b4f4-4622-875e-2edc60956504
+CONTENT: We have some exquisite silk sarees in our collection. You might be interested in the *Royal Banarasi Silk Saree* we previously mentioned, priced at ₹6500. 🌸 It's truly a masterpiece with its handwoven silk and traditional gold zari borders. If you're looking for something else, our *Classic Kanjeevaram Saree* is also a premium option priced at ₹8500. It's a stunning gold Kanjeevaram silk saree perfect for special occasions. Would you like to know more about either of these or explore other options? 🤗
+ERROR: {"error":{"message":"Authentication Error","code":190,"type":"OAuthException","fbtrace_id":"AvliagqiuAf-MLDPuYVSQ8L"}}

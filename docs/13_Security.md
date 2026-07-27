@@ -5,17 +5,42 @@ This document defines the protocols for data protection, encryption, credential 
 ---
 
 ## 1. Compliance & Data Sovereignty (GDPR / Local Laws)
+
 As a platform handling customer messaging, Closely AI conforms to standard privacy guidelines:
 
-- **Right to Be Forgotten**: Provide an API endpoint and a dashboard button to delete a customer's history.
-- **Explicit Opt-out**: If a customer messages *"Stop"* or *"Opt out"*, the AI immediately flags the conversation status to `resolved` and pauses further automatic notifications.
-- **Data Minimization**: Only store customer data relevant to sales processing (phone number, name, shipping address, sizing/color preferences). Do not capture generic user device data.
+* **Right to Be Forgotten**: Provide a dashboard control and secure API endpoint to delete a customer's history. The system permanently purges or cryptographically hashes PII fields within 48 hours of a merchant or shopper request. 
+  * **Deletion Execution Pipeline**:
+    ```
+    Delete request received ──► Identity verified ──► Deletion job queued ──► Audit log written ──► Customer notified
+    ```
+    1. *Request Received*: Shopper asks merchant or triggers opt-out; merchant registers deletion request in Dashboard.
+    2. *Identity Verified*: System checks phone number hashes to verify target record ownership.
+    3. *Deletion Job Queued*: Asynchronous background job executes database purge of message contents and preferences.
+    4. *Audit Log Written*: Cryptographically signed audit log registers a completed GDPR purge action (referencing only the hashed customer ID).
+    5. *Customer Notified*: Auto-acknowledgment sent to customer confirming successful deletion of historical thread data.
+* **Explicit Opt-out**: If a customer messages *"Stop"* or *"Opt out"*, the AI immediately transitions the conversation status to `resolved` and pauses automated message sequences.
+* **Data Minimization**: Only store data required for recommendation and checkouts (phone number, name, shipping address, sizing/color preferences). Device fingerprints or unneeded network metrics are ignored.
 
 ---
 
-## 2. Data Protection & Encryption at Rest
-- **PII Encryption**: Customer phone numbers, names, and shipping addresses are encrypted in the PostgreSQL database using column-level encryption (`pgcrypto` or AES-GCM 256-bit keys).
-- **Session Caching**: Session memory in Redis is configured with an explicit Time-To-Live (TTL) of 24 hours. Conversation states persist, but transient memory is regularly purged.
+## 2. Data Retention & Archiving Policy
+
+To secure data, comply with regulatory requirements, and limit storage overhead, Closely AI enforces the following data lifecycle policy:
+
+| Dataset | Retention Window (Active) | Archiving Action (Cold) | Deletion/Purge Action |
+| :--- | :--- | :--- | :--- |
+| **Conversations & Chat Logs** | 90 Days | Compress and move to AWS S3 Glacier (AES-256) | Permanent delete after **1 Year** |
+| **Recommendation telemetry** | 180 Days (6 Months) | Anonymize / hash customer IDs; retain feature vectors | Aggregated analytics retained indefinitely |
+| **Replay Exports (JSON/PDF)**| 30 Days | Purge local export volumes | Permanent delete after **30 Days** |
+| **Customer PII Profiles** | 30 Days of inactivity | Archive contact structure without preferences | Purge upon merchant request / GDPR event |
+
+---
+
+## 3. Data Protection & Encryption at Rest
+
+* **PII Encryption**: Customer phone numbers, names, and shipping addresses are encrypted in the PostgreSQL database using column-level encryption (`pgcrypto` or AES-GCM 256-bit keys).
+* **Session Caching**: Session memory in Redis is configured with an explicit Time-To-Live (TTL) of 24 hours. Conversation states persist, but transient memory is regularly purged.
+
 
 ---
 

@@ -10,6 +10,7 @@ from tests.conftest import (
 )
 from app.database import Base, get_db, tenant_var
 from app import models
+from app.routers.auth import login_limiter
 
 class TestTenantIsolation(unittest.TestCase):
     @classmethod
@@ -22,6 +23,9 @@ class TestTenantIsolation(unittest.TestCase):
         teardown_test_db()
 
     def setUp(self):
+        # Reset login rate limiter requests for this client
+        login_limiter.requests.clear()
+
         # Clear tables
         db = TestingSessionLocal()
         clean_tables(db)
@@ -54,7 +58,8 @@ class TestTenantIsolation(unittest.TestCase):
         login_data = {"username": email, "password": "password123"}
         res = self.client.post("/api/auth/login", data=login_data)
         self.assertEqual(res.status_code, 200)
-        return {"Authorization": f"Bearer {res.json()['access_token']}"}
+        token = res.cookies.get("access_token")
+        return {"Authorization": f"Bearer {token}"}
 
     def test_tenant_read_isolation(self):
         """
@@ -176,8 +181,212 @@ class TestTenantIsolation(unittest.TestCase):
         self.assertEqual(res_detail.status_code, 404)
 
         # Attempt takeover on Tenant B's conversation as Tenant A
-        res_takeover = self.client.post(f"/api/conversations/{conv_b_id}/takeover?status_val=human_takeover", headers=self.org_a_headers)
+        res_takeover = self.client.post(f"/api/conversations/{conv_b_id}/takeover?status_val=OWNER_ACTIVE", headers=self.org_a_headers)
         self.assertEqual(res_takeover.status_code, 404)
+
+    def test_db_rls_isolation(self):
+        """
+        Verify RLS enforces isolation directly at database level when app.current_tenant is set.
+        """
+        from sqlalchemy import text
+        db = TestingSessionLocal()
+        
+        # 1. Clear session variable and create a product for Tenant B
+        db.execute(text("SET LOCAL app.current_tenant = ''"))
+        prod_b = models.Product(
+            organization_id=self.org_b.id,
+            sku="SKU-RLS-B",
+            name="Tenant B RLS Saree",
+            price=3000,
+            color="Red",
+            fabric="Silk",
+            embedding_status="completed"
+        )
+        db.add(prod_b)
+        db.commit()
+        
+        # 2. Start a transaction, set app.current_tenant to Tenant A's ID
+        db.begin()
+        
+        # Create a non-superuser role for testing RLS enforcement
+        db.execute(text("DROP ROLE IF EXISTS test_rls_user"))
+        db.execute(text("CREATE ROLE test_rls_user"))
+        db.execute(text("GRANT USAGE ON SCHEMA public TO test_rls_user"))
+        db.execute(text("GRANT SELECT ON products TO test_rls_user"))
+        db.execute(text("SET ROLE test_rls_user"))
+        
+        db.execute(text("SET LOCAL app.current_tenant = :org_id"), {"org_id": str(self.org_a.id)})
+        
+        # Query products (RLS should block seeing Tenant B's product)
+        prods = db.query(models.Product).filter(models.Product.sku == "SKU-RLS-B").all()
+        
+        # Clean up role and reset role
+        db.execute(text("RESET ROLE"))
+        db.execute(text("DROP OWNED BY test_rls_user"))
+        db.execute(text("DROP ROLE IF EXISTS test_rls_user"))
+        
+        self.assertEqual(len(prods), 0)
+        
+        db.rollback()
+        db.close()
+
+    def test_write_rls_enforcement_at_db_level(self):
+        """
+        Verify RLS restricts INSERT and UPDATE at the database level when app.current_tenant is set.
+        """
+        from sqlalchemy import text
+        from sqlalchemy.exc import InternalError, ProgrammingError, OperationalError
+        db = TestingSessionLocal()
+        
+        # 1. Create the role in a separate transaction and commit it so it persists database rollback
+        db.execute(text("DROP ROLE IF EXISTS test_rls_write_user"))
+        db.execute(text("CREATE ROLE test_rls_write_user"))
+        db.execute(text("GRANT USAGE ON SCHEMA public TO test_rls_write_user"))
+        db.execute(text("GRANT SELECT, INSERT, UPDATE ON products TO test_rls_write_user"))
+        db.commit()
+        
+        # 2. Start the test transaction
+        db.begin()
+        db.execute(text("SET ROLE test_rls_write_user"))
+        
+        try:
+            # Set tenant context to Tenant A
+            db.execute(text("SET LOCAL app.current_tenant = :org_id"), {"org_id": str(self.org_a.id)})
+            
+            # Attempt to INSERT a product with Tenant B's organization_id
+            mismatched_prod = models.Product(
+                organization_id=self.org_b.id,
+                sku="SKU-RLS-MISMATCH",
+                name="Tenant B Saree Mismatch",
+                price=4000,
+                color="Green",
+                fabric="Cotton",
+                embedding_status="completed"
+            )
+            db.add(mismatched_prod)
+            
+            # This should fail due to RLS insert policy
+            with self.assertRaises((ProgrammingError, InternalError, OperationalError)) as context:
+                db.commit()
+            
+            self.assertIn("violates row-level security policy", str(context.exception))
+            db.rollback()
+            
+        finally:
+            # Clean up role and reset
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            
+            db.execute(text("RESET ROLE"))
+            try:
+                db.execute(text("DROP OWNED BY test_rls_write_user"))
+            except Exception:
+                pass
+            db.execute(text("DROP ROLE IF EXISTS test_rls_write_user"))
+            db.commit()
+            db.close()
+
+    def test_soft_delete_conversations_and_brand(self):
+        """
+        Verify DELETE /api/brand/profile soft-deletes the brand and its conversations,
+        ensuring rows remain in the DB with deleted_at set, but normal queries exclude them.
+        """
+        db = TestingSessionLocal()
+        # 1. Create a conversation for Tenant A
+        conv_a = models.Conversation(
+            organization_id=self.org_a.id,
+            customer_phone="+919900003333",
+            customer_name="Customer A Soft Delete",
+            status="AI_ACTIVE"
+        )
+        db.add(conv_a)
+        db.commit()
+        db.refresh(conv_a)
+        conv_a_id = conv_a.id
+        
+        # Verify it can be retrieved normally
+        db.is_admin = False
+        db.organization_id = self.org_a.id
+        db_conv = db.query(models.Conversation).filter(models.Conversation.id == conv_a_id).first()
+        self.assertIsNotNone(db_conv)
+        
+        # 2. Call DELETE /api/brand/profile
+        res = self.client.delete("/api/brand/profile", headers=self.org_a_headers)
+        self.assertEqual(res.status_code, 204)
+        
+        # 3. Verify normal queries return empty/404/401
+        # Get conversations
+        res_convs = self.client.get("/api/conversations", headers=self.org_a_headers)
+        self.assertEqual(res_convs.status_code, 401)
+        
+        # 4. Verify rows STILL exist in DB (not hard-deleted) with deleted_at set
+        # Bypass RLS/loader filters to check actual database rows
+        db.is_admin = True
+        db.expire_all()
+        db_org = db.query(models.Organization).filter(models.Organization.id == self.org_a.id).first()
+        self.assertIsNotNone(db_org)
+        self.assertIsNotNone(db_org.deleted_at)
+        
+        db_conv_deleted = db.query(models.Conversation).filter(models.Conversation.id == conv_a_id).first()
+        self.assertIsNotNone(db_conv_deleted)
+        self.assertIsNotNone(db_conv_deleted.deleted_at)
+        
+        db.close()
+
+    def test_login_rate_limiting(self):
+        """
+        Verify login rate limiter returns 429 after exceeding limit.
+        """
+        login_data = {"username": "limit@test.com", "password": "password123"}
+        
+        # Call login up to 5 times (limiter limit is 5)
+        for _ in range(5):
+            self.client.post("/api/auth/login", data=login_data)
+            
+        # 6th call should trigger 429
+        res = self.client.post("/api/auth/login", data=login_data)
+        self.assertEqual(res.status_code, 429)
+        self.assertIn("Too many requests", res.json()["detail"])
+
+    def test_cross_tenant_caching_isolation(self):
+        """
+        Verify that query compilation caching in SQLAlchemy doesn't leak tenant data.
+        Interleave requests between Org A and Org B, asserting strict data correctness.
+        """
+        # Create product for Org A
+        res_a = self.client.post(
+            "/api/catalog/products",
+            headers=self.org_a_headers,
+            json={"sku": "ORG-A-ONLY-SKU", "name": "Product A", "price": 10.0, "color": "Red"}
+        )
+        self.assertEqual(res_a.status_code, 201)
+
+        # Create product for Org B
+        res_b = self.client.post(
+            "/api/catalog/products",
+            headers=self.org_b_headers,
+            json={"sku": "ORG-B-ONLY-SKU", "name": "Product B", "price": 20.0, "color": "Blue"}
+        )
+        self.assertEqual(res_b.status_code, 201)
+
+        # Alternating requests: A -> B -> A -> B -> A
+        sequence = [
+            (self.org_a_headers, "ORG-A-ONLY-SKU", "ORG-B-ONLY-SKU"),
+            (self.org_b_headers, "ORG-B-ONLY-SKU", "ORG-A-ONLY-SKU"),
+            (self.org_a_headers, "ORG-A-ONLY-SKU", "ORG-B-ONLY-SKU"),
+            (self.org_b_headers, "ORG-B-ONLY-SKU", "ORG-A-ONLY-SKU"),
+            (self.org_a_headers, "ORG-A-ONLY-SKU", "ORG-B-ONLY-SKU"),
+        ]
+
+        for headers, expected_sku, prohibited_sku in sequence:
+            res = self.client.get("/api/catalog/products", headers=headers)
+            self.assertEqual(res.status_code, 200)
+            products = res.json()
+            skus = [p["sku"] for p in products]
+            self.assertIn(expected_sku, skus)
+            self.assertNotIn(prohibited_sku, skus)
 
 if __name__ == "__main__":
     unittest.main()

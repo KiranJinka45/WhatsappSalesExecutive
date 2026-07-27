@@ -29,8 +29,8 @@ class TestCloselyBackend(unittest.TestCase):
         self.classify_patch = patch('app.ai_service.classify_intent')
         self.mock_classify = self.classify_patch.start()
         self.mock_classify.side_effect = lambda msg, hist=None: (
-            "human_negotiation" if any(w in msg.lower() for w in ["discount", "wholesale", "human"]) 
-            else "product_discovery"
+            "discount_request" if any(w in msg.lower() for w in ["discount", "wholesale", "human"]) 
+            else "product_search"
         )
 
         self.embedding_patch = patch('app.ai_service.get_embedding')
@@ -55,6 +55,9 @@ class TestCloselyBackend(unittest.TestCase):
         self.reply_patch.stop()
 
     def _create_test_owner(self):
+        from app.routers.auth import login_limiter
+        login_limiter.requests.clear()
+
         # Sign up
         signup_data = {
             "email": "testowner@boutique.com",
@@ -194,9 +197,10 @@ class TestCloselyBackend(unittest.TestCase):
         
         # Verify conversation and messages in the database
         db = TestingSessionLocal()
+        db.is_admin = True
         conv = db.query(models.Conversation).filter(models.Conversation.customer_phone == "+919900001111").first()
         self.assertIsNotNone(conv)
-        self.assertEqual(conv.status, "ai_active")
+        self.assertEqual(conv.status, "AI_ACTIVE")
         
         messages = db.query(models.Message).filter(models.Message.conversation_id == conv.id).order_by(models.Message.created_at.asc()).all()
         self.assertEqual(len(messages), 2)
@@ -219,8 +223,9 @@ class TestCloselyBackend(unittest.TestCase):
         
         # Verify conversation is now in human_takeover status in database
         db = TestingSessionLocal()
+        db.is_admin = True
         conv = db.query(models.Conversation).filter(models.Conversation.customer_phone == "+919900001111").first()
-        self.assertEqual(conv.status, "human_takeover")
+        self.assertEqual(conv.status, "WAITING_APPROVAL")
         
         messages = db.query(models.Message).filter(models.Message.conversation_id == conv.id).all()
         # Should contain customer message, AI response, escalation message, handoff note

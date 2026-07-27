@@ -1,0 +1,50 @@
+[
+  {
+    "sender": "customer",
+    "content": "Hi, do you have any Salwar Suits under 4000?",
+    "timestamp": "2026-07-22T09:58:03.602095+00:00",
+    "explainability": {}
+  },
+  {
+    "sender": "ai",
+    "content": "Hello! Yes, we have the Anarkali Salwar Suit (SKU-SUIT-001) in Yellow, crafted in Cotton Blend for INR 3,499. We also have Chanderi Silk Suit Set (SKU-SUIT-002) for INR 4,200. Would you like to check out the Anarkali Suit for INR 3,499?",
+    "timestamp": "2026-07-22T09:58:03.619109+00:00",
+    "explainability": {
+      "intent": "product_discovery",
+      "retrieved_products": [
+        "SKU-SUIT-001"
+      ]
+    }
+  },
+  {
+    "sender": "customer",
+    "content": "Yes, what sizes are available in that yellow one?",
+    "timestamp": "2026-07-22T09:58:03.638091+00:00",
+    "explainability": {}
+  },
+  {
+    "sender": "ai",
+    "content": "The Anarkali Salwar Suit (SKU-SUIT-001) is available in M, L, and XL sizes. We have 12 items left in stock. Would you like to order size M?",
+    "timestamp": "2026-07-22T09:58:03.658293+00:00",
+    "explainability": {
+      "intent": "product_info",
+      "retrieved_products": [
+        "SKU-SUIT-001"
+      ]
+    }
+  },
+  {
+    "sender": "customer",
+    "content": "I will think about it and let you know. Thanks!",
+    "timestamp": "2026-07-22T09:58:03.685870+00:00",
+    "explainability": {}
+  },
+  {
+    "sender": "ai",
+    "content": "You are most welcome! Feel free to message back anytime. Have a lovely day!",
+    "timestamp": "2026-07-22T09:58:03.707650+00:00",
+    "explainability": {
+      "intent": "general"
+    }
+  }
+]

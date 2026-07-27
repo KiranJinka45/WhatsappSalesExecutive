@@ -1,0 +1,11 @@
+sku,name,price,color,category_name,gender,fabric,description,stock_count,sizes,image_urls,video_urls
+ETH-001,Banarasi Silk Saree,4500,Red,Saree,Women,Silk,Handwoven authentic Banarasi silk saree with gold zari work,15,FREE,https://example.com/eth001.jpg,
+ETH-002,Kanjeevaram Silk Saree,6500,Blue,Saree,Women,Silk,Pure Kanjeevaram silk with traditional border,5,FREE,https://example.com/eth002.jpg,
+ETH-003,Cotton Printed Kurti,1200,Yellow,Kurti,Women,Cotton,Breathable cotton kurti for daily wear,50,"S,M,L,XL",https://example.com/eth003.jpg,
+ETH-004,Anarkali Suit Set,3500,Green,Suit,Women,Georgette,Full length Anarkali suit with embroidered dupatta,12,"M,L,XL",https://example.com/eth004.jpg,
+ETH-005,Chikankari Kurti,1800,White,Kurti,Women,Cotton,Lucknowi Chikankari hand embroidered kurti,25,"S,M,L",https://example.com/eth005.jpg,
+ETH-006,Bridal Lehenga Choli,15000,Maroon,Lehenga,Women,Velvet,Heavy embroidered velvet lehenga for weddings,2,"M,L",https://example.com/eth006.jpg,
+ETH-007,Men's Silk Kurta Pajama,2500,Gold,Kurta,Men,Silk,Festive wear silk kurta pajama set,30,"M,L,XL,XXL",https://example.com/eth007.jpg,
+ETH-008,Linen Kurta for Men,1500,White,Kurta,Men,Linen,Casual summer linen kurta,40,"S,M,L,XL",https://example.com/eth008.jpg,
+ETH-009,Women's Palazzo Pants,800,Black,Bottoms,Women,Rayon,Comfortable flared palazzo pants,100,"M,L,XL",https://example.com/eth009.jpg,
+ETH-010,Zari Dupatta,600,Gold,Accessories,Women,Tissue,Golden tissue dupatta to match any ethnic wear,20,FREE,https://example.com/eth010.jpg,

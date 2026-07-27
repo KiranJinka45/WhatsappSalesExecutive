@@ -1,0 +1,11 @@
+sku,name,price,color,category_name,gender,fabric,description,stock_count,sizes,image_urls,video_urls
+STR-001,Oversized Graphic Tee,1499,Black,T-Shirt,Unisex,Cotton,Heavyweight 240 GSM oversized t-shirt with cyberpunk graphic,100,"S,M,L,XL",https://example.com/str001.jpg,
+STR-002,Cargo Parachute Pants,2499,Olive,Bottoms,Unisex,Nylon,Baggy parachute pants with adjustable toggles,45,"M,L,XL",https://example.com/str002.jpg,
+STR-003,Reflective Windbreaker,3499,Silver,Jacket,Unisex,Polyester,Lightweight windbreaker with 3M reflective panels,20,"M,L,XL",https://example.com/str003.jpg,
+STR-004,Acid Wash Hoodie,2999,Grey,Hoodie,Unisex,Fleece,Vintage washed heavy hoodie with drop shoulders,60,"S,M,L,XL",https://example.com/str004.jpg,
+STR-005,Distressed Denim Jeans,2899,Blue,Bottoms,Men,Denim,Straight fit distressed denim,30,"30,32,34,36",https://example.com/str005.jpg,
+STR-006,Crop Top Y2K,999,Pink,Top,Women,Cotton Blend,Y2K style fitted crop top,80,"XS,S,M",https://example.com/str006.jpg,
+STR-007,Chunky Sneakers,4599,White,Footwear,Unisex,Synthetic,Platform chunky sneakers for streetwear aesthetic,15,"7,8,9,10,11",https://example.com/str007.jpg,
+STR-008,Ribbed Beanie,499,Black,Accessories,Unisex,Acrylic,Classic everyday ribbed beanie,150,FREE,https://example.com/str008.jpg,
+STR-009,Utility Vest,1999,Black,Outerwear,Unisex,Nylon,Multi-pocket tactical utility vest,25,"M,L",https://example.com/str009.jpg,
+STR-010,Flannel Checkered Shirt,1599,Red,Shirt,Men,Flannel,Oversized thick flannel shirt,40,"M,L,XL",https://example.com/str010.jpg,

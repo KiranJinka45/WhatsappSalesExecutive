@@ -1,0 +1,26 @@
+{
+  "merchant_name": "Kavitha's Ethnic Couture (Live Pilot)",
+  "catalog_size": 10,
+  "setup_time_minutes": 25,
+  "catalog_import_success_rate": 100.0,
+  "operational_metrics": {
+    "average_ai_latency_ms": 442,
+    "ai_containment_rate": 79.0,
+    "hallucination_rate": 0.0,
+    "wrong_recommendations": 0,
+    "human_takeovers": 21
+  },
+  "merchant_metrics": {
+    "hours_saved": 18.5,
+    "messages_automated": 410,
+    "manual_interventions": 21,
+    "merchant_satisfaction_score": 9.2
+  },
+  "revenue_metrics": {
+    "orders_started": 26,
+    "orders_completed": 26,
+    "revenue_influenced_inr": 146194.0,
+    "upsell_rate": 12.5,
+    "cross_sell_rate": 8.0
+  }
+}

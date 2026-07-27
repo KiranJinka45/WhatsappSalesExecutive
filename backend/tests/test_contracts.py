@@ -22,7 +22,7 @@ def init_test_db_for_schemathesis():
     db.close()
     yield
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="module", autouse=True)
 def mock_external_services():
     from unittest.mock import patch
     # Mock Redis ping to return True
@@ -34,11 +34,19 @@ def mock_external_services():
     from app.config import settings
     original_key = settings.GEMINI_API_KEY
     settings.GEMINI_API_KEY = "mock_api_key"
+
+    # Disable rate limiting for contract/schemathesis tests
+    from app.routers.auth import login_limiter
+    from app.routers.webhooks import webhook_limiter
+    app.dependency_overrides[login_limiter] = lambda: None
+    app.dependency_overrides[webhook_limiter] = lambda: None
     
     yield
     
     redis_ping_patcher.stop()
     settings.GEMINI_API_KEY = original_key
+    app.dependency_overrides.pop(login_limiter, None)
+    app.dependency_overrides.pop(webhook_limiter, None)
 
 # Create a schema object from ASGI app
 schema = schemathesis.openapi.from_asgi("/openapi.json", app)

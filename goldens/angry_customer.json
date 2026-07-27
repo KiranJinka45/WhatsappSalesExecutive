@@ -1,0 +1,24 @@
+{
+  "name": "Angry Customer",
+  "description": "Tests that the AI detects high negative sentiment and immediately escalates rather than arguing or repeatedly failing.",
+  "conversation_history": [
+    {
+      "sender": "customer",
+      "content": "Where is my order? It's been 5 days!"
+    },
+    {
+      "sender": "ai",
+      "content": "I apologize for the delay. Your order is currently being processed."
+    }
+  ],
+  "customer_message": "This is ridiculous. I want a refund now. I am never buying from you again.",
+  "expected_output": {
+    "intent": "escalation",
+    "entities": {},
+    "validation_rules": [
+      "AI_STATUS_SET_TO_HUMAN_TAKEOVER",
+      "AI_RESPONSE_EMPATHETIC",
+      "NO_PRODUCT_RECOMMENDATIONS"
+    ]
+  }
+}

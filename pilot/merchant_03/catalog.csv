@@ -1,0 +1,11 @@
+sku,name,price,color,category_name,gender,fabric,description,stock_count,sizes,image_urls,video_urls
+FRM-001,Two-Piece Business Suit,12500,Navy,Suit,Men,Wool Blend,Classic fit navy blue 2-piece suit for office and events,15,"38,40,42,44",https://example.com/frm001.jpg,
+FRM-002,Slim Fit Tuxedo,18000,Black,Suit,Men,Wool,Premium satin lapel tuxedo for black-tie events,5,"38,40,42",https://example.com/frm002.jpg,
+FRM-003,Oxford Cotton Shirt,1800,White,Shirt,Men,Cotton,Crisp white Oxford button-down shirt,80,"39,40,42,44",https://example.com/frm003.jpg,
+FRM-004,Silk Tie,900,Red,Accessories,Men,Silk,Textured crimson red silk tie,100,FREE,https://example.com/frm004.jpg,
+FRM-005,Leather Brogues,4500,Tan,Footwear,Men,Leather,Genuine leather tan brogue shoes,20,"8,9,10,11",https://example.com/frm005.jpg,
+FRM-006,Dress Trousers,2200,Grey,Bottoms,Men,Polyester Blend,Tailored fit flat front dress trousers,40,"32,34,36,38",https://example.com/frm006.jpg,
+FRM-007,Waistcoat,3000,Charcoal,Outerwear,Men,Wool Blend,V-neck formal waistcoat with adjustable back,15,"38,40,42",https://example.com/frm007.jpg,
+FRM-008,Cufflinks Set,1200,Silver,Accessories,Men,Metal,Elegant silver-tone knot cufflinks,50,FREE,https://example.com/frm008.jpg,
+FRM-009,French Cuff Shirt,2100,Light Blue,Shirt,Men,Cotton,Formal shirt with French cuffs,35,"39,40,42",https://example.com/frm009.jpg,
+FRM-010,Leather Belt,1500,Black,Accessories,Men,Leather,Reversible black and brown formal belt,60,"34,36,38,40",https://example.com/frm010.jpg,

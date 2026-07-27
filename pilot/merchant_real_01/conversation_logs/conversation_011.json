@@ -1,0 +1,64 @@
+[
+  {
+    "sender": "customer",
+    "content": "Hello, I am looking for a nice sarees in red.",
+    "timestamp": "2026-07-22T09:57:57.841388+00:00",
+    "explainability": {}
+  },
+  {
+    "sender": "ai",
+    "content": "Namaste Amit Sen! Welcome to Kavitha's Ethnic Couture. We have a perfect match: the Royal Banarasi Silk Saree (SKU: SKU-SAR-001) made in Pure Banarasi Silk, priced at INR 6500.0. Would you like to check sizes?",
+    "timestamp": "2026-07-22T09:57:57.884608+00:00",
+    "explainability": {
+      "intent": "product_discovery",
+      "retrieved_products": [
+        "SKU-SAR-001"
+      ]
+    }
+  },
+  {
+    "sender": "customer",
+    "content": "What sizes do you have? I need size M.",
+    "timestamp": "2026-07-22T09:57:57.909082+00:00",
+    "explainability": {}
+  },
+  {
+    "sender": "ai",
+    "content": "Yes, size M is in stock! We currently have 15 items remaining. Would you like me to send a payment link to secure your order?",
+    "timestamp": "2026-07-22T09:57:57.930461+00:00",
+    "explainability": {
+      "intent": "product_info",
+      "retrieved_products": [
+        "SKU-SAR-001"
+      ]
+    }
+  },
+  {
+    "sender": "customer",
+    "content": "Yes, please send the link.",
+    "timestamp": "2026-07-22T09:57:57.953551+00:00",
+    "explainability": {}
+  },
+  {
+    "sender": "ai",
+    "content": "Brilliant! I've created your order. Here is your checkout payment link: https://checkout.closely.ai/pay/9a06d8c9-f404-4bd9-9af0-74d26e1bf59e. Please complete payment within 30 minutes. Let me know once paid!",
+    "timestamp": "2026-07-22T09:57:57.999898+00:00",
+    "explainability": {
+      "intent": "checkout"
+    }
+  },
+  {
+    "sender": "customer",
+    "content": "Done, paid successfully.",
+    "timestamp": "2026-07-22T09:57:58.031033+00:00",
+    "explainability": {}
+  },
+  {
+    "sender": "ai",
+    "content": "We have received your payment of INR 6500.0. Your order is confirmed! We will ship it to you soon. Thank you for shopping with Kavitha's Ethnic Couture!",
+    "timestamp": "2026-07-22T09:57:58.088050+00:00",
+    "explainability": {
+      "intent": "payment_completed"
+    }
+  }
+]

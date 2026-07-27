@@ -1,0 +1,64 @@
+[
+  {
+    "sender": "customer",
+    "content": "Hello, I am looking for a nice kurtis in white.",
+    "timestamp": "2026-07-22T09:58:14.332613+00:00",
+    "explainability": {}
+  },
+  {
+    "sender": "ai",
+    "content": "Namaste Amit Bose! Welcome to Kavitha's Ethnic Couture. We have a perfect match: the Embroidered Georgette Kurta (SKU: SKU-KUR-002) made in Georgette, priced at INR 1899.0. Would you like to check sizes?",
+    "timestamp": "2026-07-22T09:58:14.352667+00:00",
+    "explainability": {
+      "intent": "product_discovery",
+      "retrieved_products": [
+        "SKU-KUR-002"
+      ]
+    }
+  },
+  {
+    "sender": "customer",
+    "content": "What sizes do you have? I need size M.",
+    "timestamp": "2026-07-22T09:58:14.386743+00:00",
+    "explainability": {}
+  },
+  {
+    "sender": "ai",
+    "content": "Yes, size M is in stock! We currently have 30 items remaining. Would you like me to send a payment link to secure your order?",
+    "timestamp": "2026-07-22T09:58:14.411144+00:00",
+    "explainability": {
+      "intent": "product_info",
+      "retrieved_products": [
+        "SKU-KUR-002"
+      ]
+    }
+  },
+  {
+    "sender": "customer",
+    "content": "Yes, please send the link.",
+    "timestamp": "2026-07-22T09:58:14.436079+00:00",
+    "explainability": {}
+  },
+  {
+    "sender": "ai",
+    "content": "Brilliant! I've created your order. Here is your checkout payment link: https://checkout.closely.ai/pay/80d1d855-6024-4d97-af5e-202fd5a1143e. Please complete payment within 30 minutes. Let me know once paid!",
+    "timestamp": "2026-07-22T09:58:14.484111+00:00",
+    "explainability": {
+      "intent": "checkout"
+    }
+  },
+  {
+    "sender": "customer",
+    "content": "Done, paid successfully.",
+    "timestamp": "2026-07-22T09:58:14.510360+00:00",
+    "explainability": {}
+  },
+  {
+    "sender": "ai",
+    "content": "We have received your payment of INR 1899.0. Your order is confirmed! We will ship it to you soon. Thank you for shopping with Kavitha's Ethnic Couture!",
+    "timestamp": "2026-07-22T09:58:14.532723+00:00",
+    "explainability": {
+      "intent": "payment_completed"
+    }
+  }
+]

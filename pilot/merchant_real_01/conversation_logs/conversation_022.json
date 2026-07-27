@@ -1,0 +1,31 @@
+[
+  {
+    "sender": "customer",
+    "content": "Hello, I want to purchase the Designer Bridal Lehenga but I need a 20% discount and custom waist adjustment. Can you do it?",
+    "timestamp": "2026-07-22T09:58:00.260577+00:00",
+    "explainability": {}
+  },
+  {
+    "sender": "ai",
+    "content": "Welcome to Kavitha's Ethnic Couture! Our Designer Bridal Lehenga (SKU-LEH-001) is a premium velvet garment priced at INR 15,999. For custom sizing adjustments and special pricing configurations, let me loop in one of our store assistants to coordinate with our master tailors directly!",
+    "timestamp": "2026-07-22T09:58:00.281150+00:00",
+    "explainability": {
+      "intent": "human_negotiation",
+      "retrieved_products": [
+        "SKU-LEH-001"
+      ]
+    }
+  },
+  {
+    "sender": "human",
+    "content": "Hi, I am Kavitha, the store manager. Yes, we can certainly customize the waist measurement to your exact fit. I can also offer a 5% discount on the lehenga for our pilot customers. Let me know your waist size and I'll send a customized invoice link.",
+    "timestamp": "2026-07-22T09:58:00.304355+00:00",
+    "explainability": {}
+  },
+  {
+    "sender": "customer",
+    "content": "Great! My waist is 32 inches. Please send the link.",
+    "timestamp": "2026-07-22T09:58:00.327620+00:00",
+    "explainability": {}
+  }
+]

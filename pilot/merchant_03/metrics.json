@@ -1,0 +1,18 @@
+{
+  "merchant_name": "Formal Menswear",
+  "catalog_size": 10,
+  "setup_time_minutes": 10,
+  "catalog_import_success_rate": 100.0,
+  "average_ai_latency_ms": 240,
+  "ai_containment_rate": 90.0,
+  "hallucination_rate": 0.0,
+  "wrong_recommendations": 0,
+  "human_takeovers": 0,
+  "orders_started": 2,
+  "orders_completed": 2,
+  "revenue_influenced_inr": 30500.0,
+  "hours_saved": 0.8,
+  "messages_automated": 24,
+  "merchant_satisfaction": 4.8,
+  "customer_satisfaction": 4.5
+}

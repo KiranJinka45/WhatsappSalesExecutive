@@ -1,0 +1,16 @@
+FAILED MSG ID: e082da3f-b4f4-4622-875e-2edc60956504
+CONTENT: We have some exquisite silk sarees in our collection. You might be interested in the *Royal Banarasi Silk Saree* we previously mentioned, priced at ₹6500. 🌸 It's truly a masterpiece with its handwoven silk and traditional gold zari borders. If you're looking for something else, our *Classic Kanjeevaram Saree* is also a premium option priced at ₹8500. It's a stunning gold Kanjeevaram silk saree perfect for special occasions. Would you like to know more about either of these or explore other options? 🤗
+ERROR: {"error":{"message":"Authentication Error","code":190,"type":"OAuthException","fbtrace_id":"AvliagqiuAf-MLDPuYVSQ8L"}}
+--------------------------------------------------
+FAILED MSG ID: c346793f-7b49-4100-826a-e3fcf34d57b3
+CONTENT: We've already shown you the Red Royal Banarasi Silk Saree priced at ₹6500, which fits your budget of ₹7000. We also have a lovely selection in our catalog, but we don't currently have any more red sarees available within your budget. Would you like me to help you explore other options or place an order for the Royal Banarasi Silk Saree? 🌸
+ERROR: {"error":{"message":"Authentication Error","code":190,"type":"OAuthException","fbtrace_id":"ANrg5yhlLq11WVq1gkSqrtF"}}
+--------------------------------------------------
+FAILED MSG ID: ea18f29c-7ffa-4af7-9ffe-da10918f229d
+CONTENT: Hi ✨! Welcome to our boutique. We help you find the perfect attire for your special occasions. We currently don't have many products listed online. Could you please tell me what you're looking for (dress, saree, suit set or something else)?
+ERROR: {"error":{"message":"(#131030) Recipient phone number not in allowed list","code":131030,"type":"OAuthException","error_data":{"messaging_product":"whatsapp","details":"Recipient phone number not in allowed list: Add recipient phone number to recipient list and try again."},"fbtrace_id":"AJ-_bXlMymY33cIrjIvSb6i"}}
+--------------------------------------------------
+FAILED MSG ID: 838fe6d9-9d52-42d2-8f52-6ca00fffafd5
+CONTENT: Kya hai? 🙃 We have a beautiful *Royal Banarasi Silk Saree* in Red, priced at ₹6500. It's a stunning handwoven silk saree with traditional gold zari borders. You can check the details and images here: https://images.closely.ai/sar-001.jpg Would you like to explore more options or place an order? 🌸
+ERROR: {"error":{"message":"Authentication Error","code":190,"type":"OAuthException","fbtrace_id":"Aduk_RQcyDLLA-uQ5ieOipR"}}
+--------------------------------------------------

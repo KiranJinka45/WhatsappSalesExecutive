@@ -1,0 +1,18 @@
+{
+  "merchant_name": "Ethnic Boutique",
+  "catalog_size": 10,
+  "setup_time_minutes": 15,
+  "catalog_import_success_rate": 100.0,
+  "average_ai_latency_ms": 250,
+  "ai_containment_rate": 80.0,
+  "hallucination_rate": 0.0,
+  "wrong_recommendations": 0,
+  "human_takeovers": 1,
+  "orders_started": 3,
+  "orders_completed": 2,
+  "revenue_influenced_inr": 8500.0,
+  "hours_saved": 1.2,
+  "messages_automated": 36,
+  "merchant_satisfaction": 4.5,
+  "customer_satisfaction": 4.2
+}

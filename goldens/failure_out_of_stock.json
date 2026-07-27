@@ -1,0 +1,24 @@
+{
+  "name": "Failure: Out of Stock",
+  "description": "Tests that the AI gracefully handles when a requested item is out of stock without hallucinating a replacement.",
+  "conversation_history": [
+    {
+      "sender": "ai",
+      "content": "Welcome back! Are you looking for the Banarasi Silk Saree you ordered last time?"
+    }
+  ],
+  "customer_message": "Yes, do you have that in black?",
+  "expected_output": {
+    "intent": "availability",
+    "entities": {
+      "product_type": "saree",
+      "color": "black",
+      "fabric": "silk"
+    },
+    "validation_rules": [
+      "NO_HALLUCINATION_OF_STOCK",
+      "AI_RESPONSE_APOLOGIZES",
+      "AI_OFFERS_ALTERNATIVES"
+    ]
+  }
+}

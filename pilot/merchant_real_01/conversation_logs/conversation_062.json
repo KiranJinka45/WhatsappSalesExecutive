@@ -1,0 +1,47 @@
+[
+  {
+    "sender": "customer",
+    "content": "Hi, what is your shipping time and return policy?",
+    "timestamp": "2026-07-22T09:58:07.778037+00:00",
+    "explainability": {}
+  },
+  {
+    "sender": "ai",
+    "content": "Namaste! We offer free shipping on orders above INR 1,999, and delivery typically takes 3-5 business days. We also have a 7-day return policy for all unworn garments with original tags intact. Are you shopping for a specific occasion today?",
+    "timestamp": "2026-07-22T09:58:07.801473+00:00",
+    "explainability": {
+      "intent": "logistics"
+    }
+  },
+  {
+    "sender": "customer",
+    "content": "No, just checking details before ordering the Chanderi Silk Suit Set.",
+    "timestamp": "2026-07-22T09:58:07.850345+00:00",
+    "explainability": {}
+  },
+  {
+    "sender": "ai",
+    "content": "Ah! The Chanderi Silk Suit Set (SKU-SUIT-002) is a beautiful green traditional suit set, priced at INR 4,200. It is in stock and qualifies for free shipping! Let me know if you would like to select a size.",
+    "timestamp": "2026-07-22T09:58:07.883596+00:00",
+    "explainability": {
+      "intent": "product_info",
+      "retrieved_products": [
+        "SKU-SUIT-002"
+      ]
+    }
+  },
+  {
+    "sender": "customer",
+    "content": "Okay, thanks for the info.",
+    "timestamp": "2026-07-22T09:58:07.932228+00:00",
+    "explainability": {}
+  },
+  {
+    "sender": "ai",
+    "content": "My pleasure! Let me know when you are ready to order. Happy shopping!",
+    "timestamp": "2026-07-22T09:58:07.955814+00:00",
+    "explainability": {
+      "intent": "general"
+    }
+  }
+]

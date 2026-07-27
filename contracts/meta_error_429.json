@@ -1,0 +1,12 @@
+{
+  "error": {
+    "message": "(#131048) Sandbox limit reached",
+    "type": "OAuthException",
+    "code": 131048,
+    "error_data": {
+      "messaging_product": "whatsapp",
+      "details": "Sandbox limit reached"
+    },
+    "fbtrace_id": "A1B2C3D4E5"
+  }
+}

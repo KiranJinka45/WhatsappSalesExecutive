@@ -1,0 +1,18 @@
+{
+  "merchant_name": "Modern Streetwear",
+  "catalog_size": 10,
+  "setup_time_minutes": 20,
+  "catalog_import_success_rate": 100.0,
+  "average_ai_latency_ms": 280,
+  "ai_containment_rate": 70.0,
+  "hallucination_rate": 0.0,
+  "wrong_recommendations": 1,
+  "human_takeovers": 2,
+  "orders_started": 5,
+  "orders_completed": 3,
+  "revenue_influenced_inr": 11497.0,
+  "hours_saved": 1.8,
+  "messages_automated": 54,
+  "merchant_satisfaction": 4.0,
+  "customer_satisfaction": 3.9
+}

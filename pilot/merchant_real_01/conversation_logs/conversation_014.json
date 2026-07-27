@@ -1,0 +1,50 @@
+[
+  {
+    "sender": "customer",
+    "content": "Hi, do you have the Black Georgette Saree in stock?",
+    "timestamp": "2026-07-22T09:57:58.719529+00:00",
+    "explainability": {}
+  },
+  {
+    "sender": "ai",
+    "content": "Hello! The Black Georgette Saree (SKU-SAR-004) is currently out of stock. I'm sorry about that! Would you like to look at our Pastel Organza Saree (SKU-SAR-003) for INR 2,999 which is in stock?",
+    "timestamp": "2026-07-22T09:57:58.768770+00:00",
+    "explainability": {
+      "intent": "product_info",
+      "retrieved_products": [
+        "SKU-SAR-004"
+      ],
+      "stock_checks": [
+        "SKU-SAR-004:out_of_stock"
+      ]
+    }
+  },
+  {
+    "sender": "customer",
+    "content": "No, I specifically want a georgette saree.",
+    "timestamp": "2026-07-22T09:57:58.815810+00:00",
+    "explainability": {}
+  },
+  {
+    "sender": "ai",
+    "content": "I understand! We have the Floral Georgette Lehenga (SKU-LEH-002) for INR 5,500, or I can notify you the moment the Black Georgette Saree is back in stock. Would you like me to add you to our waitlist?",
+    "timestamp": "2026-07-22T09:57:58.855554+00:00",
+    "explainability": {
+      "intent": "product_discovery"
+    }
+  },
+  {
+    "sender": "customer",
+    "content": "Yes, please add me to the waitlist.",
+    "timestamp": "2026-07-22T09:57:58.892906+00:00",
+    "explainability": {}
+  },
+  {
+    "sender": "ai",
+    "content": "Done! I've added your number to the waitlist for the Black Georgette Saree. We will message you here as soon as it is back in stock. Thank you for your patience!",
+    "timestamp": "2026-07-22T09:57:58.920429+00:00",
+    "explainability": {
+      "intent": "general"
+    }
+  }
+]

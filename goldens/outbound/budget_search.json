@@ -1,0 +1,12 @@
+{
+  "messaging_product": "whatsapp",
+  "recipient_type": "individual",
+  "to": "919876543210",
+  "type": "text",
+  "text": {
+    "preview_url": true,
+    "body": "Hello! Check out our Royal Silk Saree (SKU-SAR-999) for INR 2999."
+  },
+  "image": null,
+  "video": null
+}

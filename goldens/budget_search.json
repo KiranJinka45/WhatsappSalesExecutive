@@ -1,0 +1,19 @@
+{
+  "name": "Budget Search",
+  "description": "Tests that the AI correctly extracts the budget entity and strictly applies the Retrieval Quality Layer.",
+  "conversation_history": [],
+  "customer_message": "Do you have any blue silk sarees under 3000 rupees?",
+  "expected_output": {
+    "intent": "product_discovery",
+    "entities": {
+      "product_type": "saree",
+      "color": "blue",
+      "fabric": "silk",
+      "budget_max": 3000
+    },
+    "validation_rules": [
+      "NO_PRODUCTS_OVER_3000_RETRIEVED",
+      "AI_RESPONSE_CONFIRMS_BUDGET"
+    ]
+  }
+}

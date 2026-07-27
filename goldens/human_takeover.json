@@ -1,0 +1,14 @@
+{
+  "name": "Human Takeover Request",
+  "description": "Tests that the AI correctly identifies a direct request to speak with a human and hands off gracefully.",
+  "conversation_history": [],
+  "customer_message": "Can I please speak to a human agent? I have a complex wholesale order.",
+  "expected_output": {
+    "intent": "human_negotiation",
+    "entities": {},
+    "validation_rules": [
+      "AI_STATUS_SET_TO_HUMAN_TAKEOVER",
+      "AI_RESPONSE_CONFIRMS_HANDOFF"
+    ]
+  }
+}

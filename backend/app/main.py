@@ -8,6 +8,7 @@ from .routers import auth, catalog, brand, conversations, webhooks, health, anal
 from sqlalchemy import text
 from .config import settings
 import logging
+logger = logging.getLogger(__name__)
 import uuid
 try:
     import sentry_sdk
@@ -59,15 +60,16 @@ async def lifespan(app: FastAPI):
 
     # Start Redis Worker in a daemon background thread for queue processing
     worker_instance = None
-    try:
-        import threading
-        from .worker import Worker
-        worker_instance = Worker()
-        worker_thread = threading.Thread(target=worker_instance.run, daemon=True)
-        worker_thread.start()
-        print("Started Closely AI Worker daemon thread in background.")
-    except Exception as e:
-        print(f"Failed to start background worker: {e}. Messages will be processed synchronously.")
+    if not settings.TESTING:
+        try:
+            import threading
+            from .worker import Worker
+            worker_instance = Worker()
+            worker_thread = threading.Thread(target=worker_instance.run, daemon=True)
+            worker_thread.start()
+            print("Started Closely AI Worker daemon thread in background.")
+        except Exception as e:
+            print(f"Failed to start background worker: {e}. Messages will be processed synchronously.")
         
     yield
     if worker_instance:
@@ -81,43 +83,39 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Single unified CORS + security middleware (prevents duplicate headers)
+# Standard Outer CORSMiddleware (Guarantees CORS headers on ALL responses including 401, 403, 500)
+allowed_origins = [
+    "https://closely-frontend.onrender.com",
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:5173"
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_origin_regex=r"https://.*\.onrender\.com",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["Content-Type", "Authorization", "X-Request-ID"],
+)
 
 @app.middleware("http")
-async def unified_security_cors_middleware(request: Request, call_next):
-    origin = request.headers.get("origin")
+async def security_nul_check_middleware(request: Request, call_next):
+    # Check NUL bytes in path & query
+    import urllib.parse
+    decoded_path = urllib.parse.unquote(request.url.path)
+    decoded_query = urllib.parse.unquote(request.url.query)
+    if "\x00" in decoded_path or "\x00" in decoded_query:
+        return JSONResponse(status_code=400, content={"detail": "NUL characters are not allowed"})
     
-    # 1. Handle OPTIONS preflight immediately with 200 OK
-    if request.method == "OPTIONS":
-        response = Response(status_code=200)
-    else:
-        # 2. Check NUL bytes in path & query
-        import urllib.parse
-        decoded_path = urllib.parse.unquote(request.url.path)
-        decoded_query = urllib.parse.unquote(request.url.query)
-        if "\x00" in decoded_path or "\x00" in decoded_query:
-            response = JSONResponse(status_code=400, content={"detail": "NUL characters are not allowed"})
-        else:
-            try:
-                response = await call_next(request)
-            except Exception as exc:
-                logger.error(f"Unhandled server exception: {exc}", exc_info=True)
-                response = JSONResponse(status_code=500, content={"detail": "Internal server error"})
-
-    # 3. Always attach CORS headers to EVERY response (200, 401, 400, 429, 500, OPTIONS)
-    if origin:
-        response.headers["Access-Control-Allow-Origin"] = origin
-        response.headers["Access-Control-Allow-Credentials"] = "true"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
-        
-        # When credentials=true, browsers do NOT allow wildcard '*' for Allow-Headers.
-        # We dynamically echo back whatever headers the client requested, or use a safe default.
-        req_headers = request.headers.get("access-control-request-headers", "Content-Type, Authorization, X-Request-ID")
-        response.headers["Access-Control-Allow-Headers"] = req_headers
-        
-        response.headers["Access-Control-Expose-Headers"] = "Content-Type, Authorization, X-Request-ID"
-        
-    return response
+    try:
+        response = await call_next(request)
+        return response
+    except Exception as exc:
+        logger.error(f"Unhandled server exception: {exc}", exc_info=True)
+        return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 @app.middleware("http")
 async def add_correlation_id(request: Request, call_next):

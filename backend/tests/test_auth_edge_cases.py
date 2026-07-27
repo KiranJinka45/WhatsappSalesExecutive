@@ -30,8 +30,57 @@ def test_missing_auth_header():
     assert response.status_code == 401
 
 def test_wrong_role_rejection():
-    # If there are roles like 'admin' vs 'user', test it here
-    pass
+    # 1. Test Staff User (Should get 403)
+    db = TestingSessionLocal()
+    db.is_admin = True
+    try:
+        from app.models import User, Organization
+        import uuid
+        from app.security import get_password_hash
+        
+        org = Organization(name="Staff Org")
+        db.add(org)
+        db.commit()
+        
+        staff_user = User(
+            id=uuid.uuid4(),
+            organization_id=org.id,
+            email="staff@example.com",
+            name="Staff",
+            password_hash=get_password_hash("pass"),
+            role="staff"
+        )
+        db.add(staff_user)
+        db.commit()
+        
+        staff_token = create_access_token(data={"sub": str(staff_user.id)})
+        staff_headers = {"Authorization": f"Bearer {staff_token}"}
+        
+        update_data = {"whatsapp_number": "123456789"}
+        response = client.put("/api/brand/profile", json=update_data, headers=staff_headers)
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Operation not permitted"
+        
+        # 2. Test Owner User (Should get 200)
+        owner_user = User(
+            id=uuid.uuid4(),
+            organization_id=org.id,
+            email="owner@example.com",
+            name="Owner",
+            password_hash=get_password_hash("pass"),
+            role="owner"
+        )
+        db.add(owner_user)
+        db.commit()
+        
+        owner_token = create_access_token(data={"sub": str(owner_user.id)})
+        owner_headers = {"Authorization": f"Bearer {owner_token}"}
+        
+        response = client.put("/api/brand/profile", json=update_data, headers=owner_headers)
+        assert response.status_code == 200
+    finally:
+        db.is_admin = False
+        db.close()
 
 def test_nonexistent_user_token_rejection():
     # Valid JWT but user ID doesn't exist in DB
