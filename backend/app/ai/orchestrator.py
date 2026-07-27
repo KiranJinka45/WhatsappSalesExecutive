@@ -82,7 +82,7 @@ def generate_reply(
     if policies_context is None:
         policies_context = kwargs.get("policies_ctx") or {}
     # Format catalog context
-    catalog_str = "No matching items found in the catalog."
+    catalog_str = "For general inquiries or greetings, introduce Pushpalatha Silks boutique collection of silk sarees (Banarasi, Kanjeevaram, Pattu, Cotton)."
     if catalog_context:
         items = []
         for item in catalog_context:
