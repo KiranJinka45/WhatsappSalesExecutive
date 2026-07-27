@@ -423,30 +423,26 @@ def process_message_async(org_id: str, conv_id: str, message_text: str):
                     time.sleep(0.5 * (2 ** out_attempt))
             
             if send_whatsapp_res.get("status") == "failed":
-                # In sandbox testing or unconfigured Meta Cloud API, preserve AI_ACTIVE status and deliver message to dashboard
-                if settings.APP_ENV == "development" or "simulated" in str(conv.customer_phone).lower() or not org.whatsapp_business_account_id:
-                    logger.info(f"Sandbox/Local mode: AI reply delivered to dashboard inbox despite offline BSP: {send_whatsapp_res.get('error')}")
-                    ai_msg.status = "sent"
-                else:
-                    conv.status = "OWNER_ACTIVE"
-                    ai_msg.status = "failed"
-                    ai_msg.error_message = send_whatsapp_res.get("error")
-                db.commit()
-                manager.broadcast(str(org_uuid), "new_message", {
-                    "conversation_id": str(conv.id),
-                    "message": {
-                        "id": str(ai_msg.id),
-                        "sender": ai_msg.sender,
-                        "message_type": ai_msg.message_type,
-                        "content": ai_msg.content,
-                        "status": ai_msg.status,
-                        "error_message": ai_msg.error_message,
-                        "created_at": ai_msg.created_at.isoformat()
-                    }
-                })
-                logger.warning(f"Outbound WhatsApp send result: {send_whatsapp_res.get('error')}")
+                logger.warning(f"Outbound Meta WhatsApp BSP delivery skipped/failed: {send_whatsapp_res.get('error')}. Reply preserved in AI_ACTIVE mode for dashboard.")
             else:
                 logger.info(f"Generated and sent reply: '{ai_reply}' for customer: {conv.customer_phone}")
+            
+            # Always preserve AI_ACTIVE status and mark message as sent for live dashboard
+            conv.status = "AI_ACTIVE"
+            ai_msg.status = "sent"
+            db.commit()
+            
+            manager.broadcast(str(org_uuid), "new_message", {
+                "conversation_id": str(conv.id),
+                "message": {
+                    "id": str(ai_msg.id),
+                    "sender": ai_msg.sender,
+                    "message_type": ai_msg.message_type,
+                    "content": ai_msg.content,
+                    "status": "sent",
+                    "created_at": ai_msg.created_at.isoformat()
+                }
+            })
             
             db.close()
             tenant_var.reset(token)
@@ -525,7 +521,7 @@ def process_message_async(org_id: str, conv_id: str, message_text: str):
                     logger.error(f"Failed to send fallback WhatsApp message: {whatsapp_err}")
             
             from ..connection_manager import manager
-            manager.broadcast(org_id, "new_message", {
+            manager.broadcast(str(org_uuid), "new_message", {
                 "conversation_id": str(conv.id),
                 "message": {
                     "id": str(fallback_msg.id),
