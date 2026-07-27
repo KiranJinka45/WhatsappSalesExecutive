@@ -447,12 +447,12 @@ def process_message_async(org_id: str, conv_id: str, message_text: str):
                 tenant_var.reset(token)
                 return
 
-            except Exception as e:
-                logger.warning(f"Attempt {attempt + 1} failed in process_message_async: {e}")
-                last_exception = e
-                if attempt < max_retries - 1:
-                    time.sleep(retry_delay)
-                    retry_delay *= 2.0
+        except Exception as e:
+            logger.warning(f"Attempt {attempt + 1} failed in process_message_async: {e}")
+            last_exception = e
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay)
+                retry_delay *= 2.0
 
     # Persistent failure handling: Generate grounded catalog/policy fallback reply and KEEP status AI_ACTIVE
     logger.error(f"Persistent failure in async message processing: {last_exception}", exc_info=True)
