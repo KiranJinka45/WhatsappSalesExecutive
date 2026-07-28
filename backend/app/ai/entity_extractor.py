@@ -52,10 +52,22 @@ def _rule_based_extract(message: str) -> Dict[str, Any]:
                 entities["size"] = sz_char.upper()
                 break
 
-    # Budget detection e.g. "under 5000", "below 10000"
-    budget_match = re.search(r"(?:under|below|less than)\s*(?:rs\.?|inr)?\s*(\d+)", msg_lower)
-    if budget_match:
-        entities["budget_max"] = float(budget_match.group(1))
+    # Budget detection: "between X and Y", "X to Y", "under X", "above X"
+    # 1. Between X and Y (e.g. "2000 and 4000", "2000 to 4000", "2000-4000")
+    between_match = re.search(r"(\d+)\s*(?:and|to|-)\s*(\d+)", msg_lower)
+    if between_match:
+        entities["budget_min"] = float(between_match.group(1))
+        entities["budget_max"] = float(between_match.group(2))
+    else:
+        # 2. Max limit (e.g. "under 5000", "below 10000", "less than 3000")
+        max_match = re.search(r"(?:under|below|less than|within|in)\s*(?:rs\.?|inr)?\s*(\d+)", msg_lower)
+        if max_match:
+            entities["budget_max"] = float(max_match.group(1))
+        
+        # 3. Min limit (e.g. "above 3000", "more than 2000", "starting from 1500")
+        min_match = re.search(r"(?:above|more than|greater than|starting|from)\s*(?:rs\.?|inr)?\s*(\d+)", msg_lower)
+        if min_match:
+            entities["budget_min"] = float(min_match.group(1))
 
     return entities
 

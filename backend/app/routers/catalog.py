@@ -233,3 +233,71 @@ def delete_product(
     db.delete(product)
     db.commit()
     return None
+
+@router.get("/public/products")
+def get_public_products(
+    tenant_slug: str = Query(..., description="Slugified name of the store"),
+    category: Optional[str] = Query(None),
+    min_price: Optional[Decimal] = Query(None),
+    max_price: Optional[Decimal] = Query(None),
+    db: Session = Depends(get_db)
+):
+    import re
+    # 1. Resolve organization by slug
+    def get_slug(name: str) -> str:
+        return re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
+
+    orgs = db.query(models.Organization).all()
+    target_org = None
+    for o in orgs:
+        if get_slug(o.name) == tenant_slug:
+            target_org = o
+            break
+            
+    if not target_org:
+        # Fallback to direct name prefix matching
+        for o in orgs:
+            if tenant_slug.replace('-', ' ') in o.name.lower():
+                target_org = o
+                break
+
+    if not target_org:
+        raise HTTPException(status_code=404, detail="Store not found")
+
+    # 2. Query products scoped by target organization and active status
+    query = db.query(models.Product).filter(
+        models.Product.organization_id == target_org.id,
+        models.Product.stock_count > 0
+    )
+
+    # 3. Apply category filter (fuzzy text match category name, fabric, or product name)
+    if category and category.strip():
+        cat_pat = f"%{category.strip()}%"
+        # We can join with categories or just check product attributes
+        query = query.filter(
+            or_(
+                models.Product.name.ilike(cat_pat),
+                models.Product.fabric.ilike(cat_pat),
+                models.Product.color.ilike(cat_pat)
+            )
+        )
+
+    # 4. Apply price range limits
+    if min_price is not None:
+        query = query.filter(models.Product.price >= min_price)
+    if max_price is not None:
+        query = query.filter(models.Product.price <= max_price)
+
+    # 5. Order by price ascending
+    products = query.order_by(models.Product.price.asc()).limit(50).all()
+
+    # 6. Format response structure
+    res_list = []
+    for p in products:
+        res_list.append({
+            "id": str(p.id),
+            "name": p.name,
+            "price": float(p.price),
+            "image_url": p.image_urls[0] if p.image_urls and len(p.image_urls) > 0 else "https://via.placeholder.com/300"
+        })
+    return res_list

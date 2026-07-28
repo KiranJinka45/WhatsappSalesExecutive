@@ -138,6 +138,244 @@ def process_message_async(org_id: str, conv_id: str, message_text: str):
                 logger.error(f"Organization {org_uuid} not found in async task.")
                 break
 
+            # Visual Catalog Search Retrieval & Direct Messaging
+            if intent == "product_visual_search":
+                from sqlalchemy import or_
+                import time
+                
+                # 1. Entity Extraction
+                entities = ai_service.extract_entities(message_text, history_list)
+                logger.info(f"Extracted entities for visual search {conv_id}: {entities}")
+                
+                # Check for ambiguous budget
+                has_budget_word = any(w in message_text.lower() for w in ["budget", "under", "between", "cheap", "cost", "price", "range"])
+                if has_budget_word and entities.get("budget_max") is None and entities.get("budget_min") is None:
+                    # Clear ambiguous response: ask a clarifying question
+                    ai_reply = "What's your budget — under 2000, 2000-4000, or above?"
+                    ai_msg = models.Message(
+                        conversation_id=conv.id,
+                        sender="ai",
+                        message_type="text",
+                        content=ai_reply,
+                        status="sent",
+                        metadata_={"intent": intent, "entities_extracted": entities}
+                    )
+                    db.add(ai_msg)
+                    db.commit()
+                    db.refresh(ai_msg)
+                    
+                    # Broadcast & Send
+                    from ..connection_manager import manager
+                    manager.broadcast(str(org_uuid), "new_message", {
+                        "conversation_id": str(conv.id),
+                        "message": {
+                            "id": str(ai_msg.id),
+                            "sender": ai_msg.sender,
+                            "message_type": ai_msg.message_type,
+                            "content": ai_msg.content,
+                            "status": "sent",
+                            "created_at": ai_msg.created_at.isoformat()
+                        }
+                    })
+                    from ..bsp_service import send_whatsapp_message
+                    send_whatsapp_message(conv.customer_phone, ai_reply, org)
+                    db.close()
+                    tenant_var.reset(token)
+                    return
+
+                # Retrieve matching products
+                category = entities.get("product_type") or entities.get("fabric") or ""
+                query = db.query(models.Product).filter(
+                    models.Product.organization_id == org_uuid,
+                    models.Product.stock_count > 0
+                )
+                if category:
+                    cat_pat = f"%{category}%"
+                    query = query.filter(
+                        or_(
+                            models.Product.name.ilike(cat_pat),
+                            models.Product.fabric.ilike(cat_pat),
+                            models.Product.color.ilike(cat_pat)
+                        )
+                    )
+                if entities.get("budget_min") is not None:
+                    query = query.filter(models.Product.price >= entities.get("budget_min"))
+                if entities.get("budget_max") is not None:
+                    query = query.filter(models.Product.price <= entities.get("budget_max"))
+                if entities.get("color"):
+                    query = query.filter(models.Product.color.ilike(f"%{entities['color']}%"))
+                if entities.get("fabric"):
+                    query = query.filter(models.Product.fabric.ilike(f"%{entities['fabric']}%"))
+
+                matches = query.order_by(models.Product.price.asc()).all()
+
+                # Response Threshold Routing
+                if len(matches) == 0:
+                    # 0 matches: offer closest available price range
+                    all_products = db.query(models.Product).filter(
+                        models.Product.organization_id == org_uuid,
+                        models.Product.stock_count > 0
+                    )
+                    if category:
+                        cat_pat = f"%{category}%"
+                        all_products = all_products.filter(
+                            or_(
+                                models.Product.name.ilike(cat_pat),
+                                models.Product.fabric.ilike(cat_pat),
+                                models.Product.color.ilike(cat_pat)
+                            )
+                        )
+                    min_price_prod = all_products.order_by(models.Product.price.asc()).first()
+                    if min_price_prod:
+                        ai_reply = f"We don't have {category or 'matching'} options in that budget range, but we have items starting from ₹{int(min_price_prod.price)}. Would you like to see those?"
+                    else:
+                        ai_reply = "We don't have any matching products in stock right now, but I can check with our team for you!"
+
+                    ai_msg = models.Message(
+                        conversation_id=conv.id,
+                        sender="ai",
+                        message_type="text",
+                        content=ai_reply,
+                        status="sent",
+                        metadata_={"intent": intent, "entities_extracted": entities}
+                    )
+                    db.add(ai_msg)
+                    db.commit()
+                    db.refresh(ai_msg)
+                    
+                    from ..connection_manager import manager
+                    manager.broadcast(str(org_uuid), "new_message", {
+                        "conversation_id": str(conv.id),
+                        "message": {
+                            "id": str(ai_msg.id),
+                            "sender": ai_msg.sender,
+                            "message_type": ai_msg.message_type,
+                            "content": ai_msg.content,
+                            "status": "sent",
+                            "created_at": ai_msg.created_at.isoformat()
+                        }
+                    })
+                    from ..bsp_service import send_whatsapp_message
+                    send_whatsapp_message(conv.customer_phone, ai_reply, org)
+                    db.close()
+                    tenant_var.reset(token)
+                    return
+
+                elif 1 <= len(matches) <= 6:
+                    # 1-6 matches: Send each product as a separate WhatsApp image message
+                    from ..bsp_service import send_whatsapp_message
+                    from ..connection_manager import manager
+                    for idx, p in enumerate(matches):
+                        img_url = p.image_urls[0] if p.image_urls and len(p.image_urls) > 0 else "https://via.placeholder.com/300"
+                        caption = f"{p.name} — ₹{int(p.price)}"
+                        
+                        send_whatsapp_message(conv.customer_phone, caption, org, media_url=img_url)
+                        
+                        db_msg = models.Message(
+                            conversation_id=conv.id,
+                            sender="ai",
+                            message_type="image",
+                            content=caption,
+                            media_url=img_url,
+                            status="sent",
+                            metadata_={"sku": p.sku, "price": float(p.price), "intent": intent}
+                        )
+                        db.add(db_msg)
+                        db.commit()
+                        db.refresh(db_msg)
+
+                        manager.broadcast(str(org_uuid), "new_message", {
+                            "conversation_id": str(conv.id),
+                            "message": {
+                                "id": str(db_msg.id),
+                                "sender": db_msg.sender,
+                                "message_type": db_msg.message_type,
+                                "content": db_msg.content,
+                                "media_url": db_msg.media_url,
+                                "status": "sent",
+                                "created_at": db_msg.created_at.isoformat()
+                            }
+                        })
+                        time.sleep(0.2)
+                    
+                    db.close()
+                    tenant_var.reset(token)
+                    return
+
+                else:
+                    # 7+ matches: Send top 4 direct image messages, then one final text message with hosted gallery page link
+                    from ..bsp_service import send_whatsapp_message
+                    from ..connection_manager import manager
+                    for p in matches[:4]:
+                        img_url = p.image_urls[0] if p.image_urls and len(p.image_urls) > 0 else "https://via.placeholder.com/300"
+                        caption = f"{p.name} — ₹{int(p.price)}"
+                        
+                        send_whatsapp_message(conv.customer_phone, caption, org, media_url=img_url)
+                        
+                        db_msg = models.Message(
+                            conversation_id=conv.id,
+                            sender="ai",
+                            message_type="image",
+                            content=caption,
+                            media_url=img_url,
+                            status="sent",
+                            metadata_={"sku": p.sku, "price": float(p.price), "intent": intent}
+                        )
+                        db.add(db_msg)
+                        db.commit()
+                        db.refresh(db_msg)
+                        
+                        manager.broadcast(str(org_uuid), "new_message", {
+                            "conversation_id": str(conv.id),
+                            "message": {
+                                "id": str(db_msg.id),
+                                "sender": db_msg.sender,
+                                "message_type": db_msg.message_type,
+                                "content": db_msg.content,
+                                "media_url": db_msg.media_url,
+                                "status": "sent",
+                                "created_at": db_msg.created_at.isoformat()
+                            }
+                        })
+                        time.sleep(0.2)
+
+                    import re
+                    slug = re.sub(r'[^a-z0-9]+', '-', org.name.lower()).strip('-')
+                    max_p_val = entities.get("budget_max") or 100000
+                    cat_val = category or "sarees"
+                    gallery_url = f"https://app.closelyai.com/catalog/{slug}?category={cat_val}&max_price={max_p_val}"
+                    link_reply = f"We have many more options available! You can browse the full collection here: {gallery_url}"
+                    
+                    send_whatsapp_message(conv.customer_phone, link_reply, org)
+                    
+                    link_msg = models.Message(
+                        conversation_id=conv.id,
+                        sender="ai",
+                        message_type="text",
+                        content=link_reply,
+                        status="sent",
+                        metadata_={"intent": intent, "gallery_url": gallery_url}
+                    )
+                    db.add(link_msg)
+                    db.commit()
+                    db.refresh(link_msg)
+                    
+                    manager.broadcast(str(org_uuid), "new_message", {
+                        "conversation_id": str(conv.id),
+                        "message": {
+                            "id": str(link_msg.id),
+                            "sender": link_msg.sender,
+                            "message_type": link_msg.message_type,
+                            "content": link_msg.content,
+                            "status": "sent",
+                            "created_at": link_msg.created_at.isoformat()
+                        }
+                    })
+                    
+                    db.close()
+                    tenant_var.reset(token)
+                    return
+
             # Semantic Search Context Retrieval
             if intent in ["product_search", "inventory_query", "product_discovery", "similar_recommendation", "product_info", "availability"]:
                 # Entity Extraction

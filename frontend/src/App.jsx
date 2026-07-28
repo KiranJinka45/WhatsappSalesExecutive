@@ -6,6 +6,7 @@ import Conversations from './components/Conversations';
 import Catalog from './components/Catalog';
 import Settings from './components/Settings';
 import Analytics from './components/Analytics';
+import PublicCatalog from './components/PublicCatalog';
 import { apiFetch } from './api';
 
 export default function App() {
@@ -16,9 +17,20 @@ export default function App() {
   const [brandName, setBrandName] = useState('Closely Boutique');
   const [brandPhone, setBrandPhone] = useState(null);
   const [publicView, setPublicView] = useState('landing'); // 'landing', 'login', 'signup'
+  const [isPublicCatalog, setIsPublicCatalog] = useState(false);
+  const [tenantSlug, setTenantSlug] = useState('');
 
   useEffect(() => {
-    checkAuth();
+    // Check if url path is public catalog route: /catalog/:tenant_slug
+    const path = window.location.pathname;
+    if (path.startsWith('/catalog/')) {
+      const slug = path.split('/')[2];
+      setTenantSlug(slug || '');
+      setIsPublicCatalog(true);
+      setCheckingAuth(false);
+    } else {
+      checkAuth();
+    }
   }, []);
 
   const checkAuth = async () => {
@@ -67,6 +79,10 @@ export default function App() {
     setBrandPhone(null);
     setPublicView('landing');
   };
+
+  if (isPublicCatalog) {
+    return <PublicCatalog tenantSlug={tenantSlug} />;
+  }
 
   if (checkingAuth) {
     return (
