@@ -14,6 +14,10 @@ class Organization(Base):
     logo_url = Column(Text, nullable=True)
     address = Column(Text, nullable=True)
     whatsapp_number = Column(String(20), unique=True, nullable=True)
+    whatsapp_business_account_id = Column(String(100), nullable=True)
+    whatsapp_phone_number_id = Column(String(100), nullable=True)
+    whatsapp_access_token = Column(Text, nullable=True)
+    is_whatsapp_connected = Column(Integer, default=0)
     policies = Column(JSONB, default=dict)  # shipping, return, exchange, general FAQs
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

@@ -54,9 +54,13 @@ async def lifespan(app: FastAPI):
     try:
         with engine.connect() as conn:
             conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS detected_language VARCHAR(50);"))
+            conn.execute(text("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS whatsapp_business_account_id VARCHAR(100);"))
+            conn.execute(text("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS whatsapp_phone_number_id VARCHAR(100);"))
+            conn.execute(text("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS whatsapp_access_token TEXT;"))
+            conn.execute(text("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS is_whatsapp_connected INTEGER DEFAULT 0;"))
             conn.commit()
     except Exception as e:
-        print(f"Altering messages table failed: {e}. If using SQLite or table already has the column, this is normal.")
+        print(f"Altering database tables failed: {e}. If using SQLite or tables already have columns, this is normal.")
 
     # Start Redis Worker in a daemon background thread for queue processing
     worker_instance = None
