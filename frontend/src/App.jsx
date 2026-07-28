@@ -74,6 +74,7 @@ export default function App() {
     } catch (err) {
       console.error("Logout request failed:", err);
     }
+    localStorage.removeItem('closely_token');
     setToken(null);
     setIsAuthenticated(false);
     setBrandPhone(null);
@@ -227,7 +228,7 @@ const styles = {
   },
   mainContent: {
     flex: 1,
-    overflow: 'hidden',
+    overflow: 'auto',
     padding: '0 2rem 2rem 2rem',
   },
 };

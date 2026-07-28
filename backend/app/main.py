@@ -92,8 +92,17 @@ allowed_origins = [
     "https://closely-frontend.onrender.com",
     "http://localhost:5173",
     "http://localhost:3000",
-    "http://127.0.0.1:5173"
+    "http://127.0.0.1:5173",
 ]
+
+# Append additional origins from CORS_ORIGINS env var (comma-separated)
+if getattr(settings, "CORS_ORIGINS", None):
+    for origin in settings.CORS_ORIGINS.split(","):
+        origin = origin.strip()
+        if origin and origin not in allowed_origins:
+            allowed_origins.append(origin)
+
+logger.info(f"CORS allowed_origins: {allowed_origins}")
 
 app.add_middleware(
     CORSMiddleware,
@@ -105,6 +114,16 @@ app.add_middleware(
     expose_headers=["Content-Type", "Authorization", "X-Request-ID"],
 )
 
+def _add_cors_headers(response: Response, request: Request):
+    """Add CORS headers to error responses so browsers don't mask 500s as CORS failures."""
+    origin = request.headers.get("origin")
+    if origin:
+        import re
+        if origin in allowed_origins or re.match(r"https://.*\.onrender\.com", origin):
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+    return response
+
 @app.middleware("http")
 async def security_nul_check_middleware(request: Request, call_next):
     # Check NUL bytes in path & query
@@ -112,14 +131,35 @@ async def security_nul_check_middleware(request: Request, call_next):
     decoded_path = urllib.parse.unquote(request.url.path)
     decoded_query = urllib.parse.unquote(request.url.query)
     if "\x00" in decoded_path or "\x00" in decoded_query:
-        return JSONResponse(status_code=400, content={"detail": "NUL characters are not allowed"})
+        resp = JSONResponse(status_code=400, content={"detail": "NUL characters are not allowed"})
+        return _add_cors_headers(resp, request)
     
     try:
         response = await call_next(request)
         return response
     except Exception as exc:
-        logger.error(f"Unhandled server exception: {exc}", exc_info=True)
-        return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+        logger.error(f"Unhandled server exception in middleware: {exc}", exc_info=True)
+        resp = JSONResponse(status_code=500, content={"detail": f"Internal server error: {str(exc)}"})
+        return _add_cors_headers(resp, request)
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Global unhandled exception: {exc}", exc_info=True)
+    resp = JSONResponse(
+        status_code=500,
+        content={"detail": f"Server error: {str(exc)}"}
+    )
+    return _add_cors_headers(resp, request)
+
+from fastapi.exceptions import RequestValidationError
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    logger.error(f"Validation error: {exc}", exc_info=True)
+    resp = JSONResponse(
+        status_code=400,
+        content={"detail": "Invalid request payload", "errors": exc.errors()}
+    )
+    return _add_cors_headers(resp, request)
 
 @app.middleware("http")
 async def add_correlation_id(request: Request, call_next):

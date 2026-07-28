@@ -50,7 +50,11 @@ export default function Auth({ onLoginSuccess, initialMode = 'login', onBackToLa
         throw new Error(errData.detail || 'Invalid email or password.');
       }
 
-      await loginResponse.json();
+      await loginResponse.json().then(data => {
+        if (data.access_token) {
+          localStorage.setItem('closely_token', data.access_token);
+        }
+      });
       onLoginSuccess();
     } catch (err) {
       setError(err.message);

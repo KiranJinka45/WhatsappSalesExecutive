@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     STRIPE_SECRET_KEY: Optional[str] = None
     STITCH_API_KEY: Optional[str] = None
     FIGMA_ACCESS_TOKEN: Optional[str] = None
+    CORS_ORIGINS: Optional[str] = None
     JWT_SECRET: str
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours

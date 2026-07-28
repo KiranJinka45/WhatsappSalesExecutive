@@ -5,6 +5,22 @@ export async function apiFetch(path, options = {}) {
   
   // Ensure credentials are sent (for cookies)
   options.credentials = 'include';
+  options.headers = options.headers || {};
+
+  // Automatically attach Content-Type for JSON bodies if not FormData
+  if (options.body && !(options.body instanceof FormData)) {
+    if (!options.headers['Content-Type'] && !options.headers['content-type']) {
+      options.headers['Content-Type'] = 'application/json';
+    }
+  }
+
+  // Attach stored token as Authorization header (fallback for cross-site cookie blocks)
+  const token = localStorage.getItem('closely_token');
+  if (token) {
+    if (!options.headers['Authorization'] && !options.headers['authorization']) {
+      options.headers['Authorization'] = `Bearer ${token}`;
+    }
+  }
   
   return fetch(url, options);
 }

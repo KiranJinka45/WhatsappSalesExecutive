@@ -45,8 +45,8 @@ class OrganizationUpdate(BaseModel):
 
 class OrganizationOut(OrganizationBase):
     id: UUID
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 

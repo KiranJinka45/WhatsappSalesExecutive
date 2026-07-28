@@ -16,26 +16,54 @@ def update_brand_profile(
     org: models.Organization = Depends(security.get_current_org),
     current_user: models.User = Depends(security.require_role("owner"))
 ):
-    update_data = profile_in.model_dump(exclude_unset=True)
-    
-    # Check duplicate WhatsApp number
-    if "whatsapp_number" in update_data and update_data["whatsapp_number"] != org.whatsapp_number:
-        num = update_data["whatsapp_number"]
-        exists = db.query(models.Organization).filter(models.Organization.whatsapp_number == num).first()
-        if exists:
+    try:
+        update_data = profile_in.model_dump(exclude_unset=True)
+        
+        # Check duplicate WhatsApp number
+        if "whatsapp_number" in update_data and update_data["whatsapp_number"]:
+            num = str(update_data["whatsapp_number"]).strip()
+            update_data["whatsapp_number"] = num
+            if num != org.whatsapp_number:
+                exists = db.query(models.Organization).filter(
+                    models.Organization.whatsapp_number == num,
+                    models.Organization.id != org.id
+                ).first()
+                if exists:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="This WhatsApp number is already connected to another brand."
+                    )
+
+        for field, value in update_data.items():
+            if field == "policies":
+                existing_policies = org.policies if isinstance(org.policies, dict) else {}
+                merged = dict(existing_policies)
+                if isinstance(value, dict):
+                    merged.update(value)
+                org.policies = merged
+                from sqlalchemy.orm.attributes import flag_modified
+                flag_modified(org, "policies")
+            else:
+                setattr(org, field, value)
+
+        db.commit()
+        db.refresh(org)
+        return org
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error updating brand profile: {e}", exc_info=True)
+        if "whatsapp_number" in str(e).lower() or "unique" in str(e).lower():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="This WhatsApp number is already connected to another brand."
             )
-
-    for field, value in update_data.items():
-        if field == "policies" and org.policies:
-            # Shallow merge policies instead of fully overwriting
-            merged = org.policies.copy()
-            merged.update(value)
-            org.policies = merged
-        else:
-            setattr(org, field, value)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to update brand profile: {str(e)}"
+        )
 
 from pydantic import BaseModel
 from typing import Optional
