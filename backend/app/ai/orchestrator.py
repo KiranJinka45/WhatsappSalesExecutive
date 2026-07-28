@@ -67,8 +67,9 @@ def generate_reply(
     if catalog_context:
         items = []
         for item in catalog_context[:3]:  # Limit to top 3 items to keep LLM context concise
+            img_str = f" | Image: {item.get('image_urls')[0]}" if item.get('image_urls') and len(item.get('image_urls')) > 0 else ""
             items.append(
-                f"- Name: {item.get('name')} | Price: ₹{item.get('price')} | Color: {item.get('color')} | Fabric: {item.get('fabric', 'N/A')}"
+                f"- Name: {item.get('name')} | Price: ₹{item.get('price')} | Color: {item.get('color')} | Fabric: {item.get('fabric', 'N/A')}{img_str}"
             )
         catalog_str = "\n".join(items)
 
