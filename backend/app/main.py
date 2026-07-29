@@ -151,7 +151,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
     return _add_cors_headers(resp, request)
 
-from fastapi.exceptions import RequestValidationError
+from fastapi.exceptions import RequestValidationError, ResponseValidationError
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     logger.error(f"Validation error: {exc}", exc_info=True)
@@ -160,6 +160,16 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         content={"detail": "Invalid request payload", "errors": exc.errors()}
     )
     return _add_cors_headers(resp, request)
+
+@app.exception_handler(ResponseValidationError)
+async def response_validation_exception_handler(request: Request, exc: ResponseValidationError):
+    logger.error(f"Response validation error: {exc}", exc_info=True)
+    resp = JSONResponse(
+        status_code=500,
+        content={"detail": f"Response validation error: {str(exc)}", "errors": exc.errors()}
+    )
+    return _add_cors_headers(resp, request)
+
 
 @app.middleware("http")
 async def add_correlation_id(request: Request, call_next):
