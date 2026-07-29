@@ -142,14 +142,9 @@ async def security_nul_check_middleware(request: Request, call_next):
         resp = JSONResponse(status_code=500, content={"detail": f"Internal server error: {str(exc)}"})
         return _add_cors_headers(resp, request)
 
-import traceback
-recent_errors = []
-
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    tb = traceback.format_exc()
-    logger.error(f"Global unhandled exception: {exc}\n{tb}", exc_info=True)
-    recent_errors.append({"type": "Exception", "error": str(exc), "traceback": tb, "timestamp": str(datetime.now())})
+    logger.error(f"Global unhandled exception: {exc}", exc_info=True)
     resp = JSONResponse(
         status_code=500,
         content={"detail": f"Server error: {str(exc)}"}
@@ -168,20 +163,12 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 @app.exception_handler(ResponseValidationError)
 async def response_validation_exception_handler(request: Request, exc: ResponseValidationError):
-    tb = traceback.format_exc()
-    logger.error(f"Response validation error: {exc}\n{tb}", exc_info=True)
-    recent_errors.append({"type": "ResponseValidationError", "error": str(exc), "traceback": tb, "timestamp": str(datetime.now())})
+    logger.error(f"Response validation error: {exc}", exc_info=True)
     resp = JSONResponse(
         status_code=500,
         content={"detail": f"Response validation error: {str(exc)}", "errors": exc.errors()}
     )
     return _add_cors_headers(resp, request)
-
-@app.get("/debug-errors")
-def get_debug_errors(secret: str = None):
-    if secret != "diagnose123":
-        raise HTTPException(status_code=403, detail="Forbidden")
-    return {"errors": recent_errors}
 
 @app.middleware("http")
 async def add_correlation_id(request: Request, call_next):
@@ -192,14 +179,9 @@ async def add_correlation_id(request: Request, call_next):
         response = await call_next(request)
         response.headers["X-Request-ID"] = request_id
         return response
-    except Exception as exc:
-        tb = traceback.format_exc()
-        recent_errors.append({"type": "MiddlewareError", "error": str(exc), "traceback": tb, "timestamp": str(datetime.now())})
-        logger.error(f"Unhandled exception in request {request_id}: {exc}\n{tb}", exc_info=True)
-        resp = JSONResponse(status_code=500, content={"detail": f"Internal server error: {str(exc)}"})
-        return _add_cors_headers(resp, request)
     finally:
         request_id_var.reset(token)
+
 
 
 # Register routers
@@ -216,7 +198,7 @@ def read_root():
     return {
         "app": "Closely AI API Gateway",
         "status": "healthy",
-        "version": "2.1"
+        "version": "2.0"
     }
 
 @app.get("/health")
