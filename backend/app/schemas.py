@@ -27,7 +27,7 @@ class OrganizationBase(BaseModel):
     whatsapp_business_account_id: Optional[str] = None
     whatsapp_phone_number_id: Optional[str] = None
     is_whatsapp_connected: Optional[int] = 0
-    policies: Dict[str, Any] = Field(default_factory=dict)
+    policies: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
 class OrganizationCreate(OrganizationBase):
     pass
