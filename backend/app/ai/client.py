@@ -277,24 +277,24 @@ def get_embedding(text: str) -> Optional[List[float]]:
 
 def get_image_embedding(image_bytes: bytes) -> Optional[List[float]]:
     """
-    Generates a multimodal embedding for image bytes using text-embedding-004.
+    Generates a multimodal embedding for image bytes using gemini-embedding-2.
     """
     client = get_gemini_client()
     if not client:
         logger.error("Gemini client not initialized for image embedding.")
-        return [0.0] * 768
+        return [0.0] * 3072
     try:
         from google.genai import types
         part = types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")
         response = client.models.embed_content(
-            model="text-embedding-004",
+            model="gemini-embedding-2",
             contents=part
         )
         if response.embeddings:
             return response.embeddings[0].values
     except Exception as e:
         logger.error(f"Failed to fetch image embedding: {e}")
-    return [0.0] * 768
+    return [0.0] * 3072
 
 def transcribe_audio(audio_bytes: bytes, mime_type: str = "audio/ogg") -> str:
     """
