@@ -93,6 +93,7 @@ def generate_reply(
 - If the language is "ta" (Tamil) and script is "latin", reply in Romanized Tamil.
 - If the script is "native", reply strictly in native regional Unicode characters.
 - If English, reply in plain English.
+- CRITICAL TELUGU QUALITY RULE: When writing in Telugu (native or Romanized), use NATURAL Telugu words — NOT phonetic transliterations of English. For example: use "వస్త్రం" or "చీర" for product/saree, NOT "ప్రాజెక్ట్" (project). Use "ధర" for price, "రంగు" for color, "అందుబాటులో ఉంది" for available. Keep product names (e.g. "Royal Banarasi Silk Saree") in English as-is since they are brand names.
 """
 
     system_instruction = f"""You are "Closely", an expert AI sales assistant for Pushpalatha Silks boutique on WhatsApp.
