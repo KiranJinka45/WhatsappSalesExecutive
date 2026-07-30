@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from .database import engine, Base, request_id_var
+from .database import engine, Base, request_id_var, SessionLocal
 from .routers import auth, catalog, brand, conversations, webhooks, health, analytics
 from sqlalchemy import text
 from .config import settings
