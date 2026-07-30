@@ -129,7 +129,7 @@ def backfill_missing_image_embeddings(db_session_factory):
         from sqlalchemy import and_, or_
         pending_products = db.query(models.Product).filter(
             models.Product.image_urls != None,
-            models.Product.image_embedding_status == "pending"
+            models.Product.image_embedding_status.in_(["pending", "failed"])
         ).all()
         
         if pending_products:
