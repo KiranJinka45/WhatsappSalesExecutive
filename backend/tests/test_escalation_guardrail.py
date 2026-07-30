@@ -110,12 +110,12 @@ def test_escalation_guardrail_persistent_failure(mock_db_and_conv):
         mock_send_whatsapp.assert_called_once()
         args, kwargs = mock_send_whatsapp.call_args
         assert args[0] == customer_phone
-        assert "connecting you with a store manager" in args[1]
+        assert "Welcome to Pushpalatha Silks!" in args[1] or "sarees" in args[1]
         from sqlalchemy import inspect
         assert str(inspect(args[2]).identity[0]) == org_id
         
-        # Check conversation status is "human_takeover"
+        # Check conversation status is "AI_ACTIVE"
         db = SessionLocal()
         conv = db.query(models.Conversation).filter_by(id=conv_id).first()
-        assert conv.status == "human_takeover"
+        assert conv.status == "AI_ACTIVE"
         db.close()

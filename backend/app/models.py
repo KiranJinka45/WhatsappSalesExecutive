@@ -79,6 +79,8 @@ class Product(Base):
     video_urls = Column(ARRAY(Text), default=list)
     embedding = Column(Vector(768), nullable=True)  # pgvector embedding (Gemini text-embedding-004)
     embedding_status = Column(String(50), default="pending", server_default="pending")  # 'pending', 'processing', 'completed', 'failed'
+    image_embedding = Column(Vector(3072), nullable=True)  # pgvector embedding (Gemini multimodal embedding-2)
+    image_embedding_status = Column(String(50), default="pending", server_default="pending")  # 'pending', 'processing', 'completed', 'failed'
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

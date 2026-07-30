@@ -58,6 +58,9 @@ async def lifespan(app: FastAPI):
             conn.execute(text("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS whatsapp_phone_number_id VARCHAR(100);"))
             conn.execute(text("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS whatsapp_access_token TEXT;"))
             conn.execute(text("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS is_whatsapp_connected INTEGER DEFAULT 0;"))
+            conn.execute(text("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS policies JSONB DEFAULT '{}';"))
+            conn.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS image_embedding vector(3072);"))
+            conn.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS image_embedding_status VARCHAR(50) DEFAULT 'pending';"))
             conn.commit()
     except Exception as e:
         print(f"Altering database tables failed: {e}. If using SQLite or tables already have columns, this is normal.")
@@ -73,7 +76,21 @@ async def lifespan(app: FastAPI):
             worker_thread.start()
             print("Started Closely AI Worker daemon thread in background.")
         except Exception as e:
-            print(f"Failed to start background worker: {e}. Messages will be processed synchronously.")
+            print(f"Failed to start worker daemon thread: {e}")
+
+        # Start image embedding backfill task in a background daemon thread
+        try:
+            import threading
+            from .catalog_service import backfill_missing_image_embeddings
+            backfill_thread = threading.Thread(
+                target=backfill_missing_image_embeddings,
+                args=(SessionLocal,),
+                daemon=True
+            )
+            backfill_thread.start()
+            print("Started Closely image embedding backfill scan in background.")
+        except Exception as e:
+            print(f"Failed to start image embedding backfill scan: {e}")
         
     yield
     if worker_instance:
@@ -156,7 +173,7 @@ from fastapi.exceptions import RequestValidationError, ResponseValidationError
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     logger.error(f"Validation error: {exc}", exc_info=True)
     resp = JSONResponse(
-        status_code=400,
+        status_code=422,
         content={"detail": "Invalid request payload", "errors": exc.errors()}
     )
     return _add_cors_headers(resp, request)

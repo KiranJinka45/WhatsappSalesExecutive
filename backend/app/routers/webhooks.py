@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, BackgroundTasks, Header, Response
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 import logging
 import json
@@ -45,7 +46,14 @@ def verify_whatsapp_handshake(
             raise HTTPException(status_code=403, detail="Verification token mismatch")
     return Response(content="verification_endpoint", media_type="text/plain")
 
-def process_message_async(org_id: str, conv_id: str, message_text: str):
+def process_message_async(
+    org_id: str,
+    conv_id: str,
+    message_text: str,
+    msg_type: str = "text",
+    media_id: Optional[str] = None,
+    mime_type: Optional[str] = None
+):
     """
     Background task to process AI response asynchronously, 
     preventing Meta webhook timeouts.
@@ -83,6 +91,83 @@ def process_message_async(org_id: str, conv_id: str, message_text: str):
                 conv.status = "AI_ACTIVE"
                 db.commit()
 
+            # Retrieve organization details globally for settings/keys
+            org_token = tenant_var.set(None)
+            db.organization_id = None
+            try:
+                org = db.query(models.Organization).filter(models.Organization.id == org_uuid).first()
+            finally:
+                tenant_var.reset(org_token)
+                db.organization_id = org_uuid
+
+            if not org:
+                logger.error(f"Organization {org_uuid} not found in async task.")
+                break
+
+            # 1. Voice Note Processing (runs synchronously before NLU pipelines)
+            if msg_type == "audio" and media_id:
+                try:
+                    logger.info(f"Downloading audio media with ID: {media_id} for transcription...")
+                    from ..bsp_service import download_meta_media
+                    audio_bytes = download_meta_media(media_id, org)
+                    
+                    logger.info("Transcribing audio bytes...")
+                    transcribed_text = ai_service.transcribe_audio(audio_bytes, mime_type or "audio/ogg")
+                    logger.info(f"Transcription result: {transcribed_text}")
+                    
+                    # Update local variable message_text for downstream pipelines
+                    message_text = transcribed_text
+                    
+                    # Update database message record
+                    cust_msg = db.query(models.Message).filter(
+                        models.Message.conversation_id == conv.id,
+                        models.Message.sender == "customer"
+                    ).order_by(models.Message.created_at.desc()).first()
+                    if cust_msg:
+                        cust_msg.content = transcribed_text
+                        db.commit()
+                        
+                        # Broadcast message update to connected merchants
+                        from ..connection_manager import manager
+                        manager.broadcast(str(org_uuid), "message_updated", {
+                            "conversation_id": str(conv.id),
+                            "message_id": str(cust_msg.id),
+                            "content": transcribed_text
+                        })
+                except Exception as audio_err:
+                    logger.error(f"Voice message transcription failed: {audio_err}")
+                    error_reply = "Namaste! We received your voice message but couldn't transcribe it clearly. Could you please type your message or try sending it again? 🙏"
+                    
+                    # Save error reply message
+                    err_msg = models.Message(
+                        conversation_id=conv.id,
+                        sender="ai",
+                        message_type="text",
+                        content=error_reply,
+                        status="sent"
+                    )
+                    db.add(err_msg)
+                    db.commit()
+                    db.refresh(err_msg)
+                    
+                    from ..connection_manager import manager
+                    manager.broadcast(str(org_uuid), "new_message", {
+                        "conversation_id": str(conv.id),
+                        "message": {
+                            "id": str(err_msg.id),
+                            "sender": err_msg.sender,
+                            "message_type": err_msg.message_type,
+                            "content": err_msg.content,
+                            "status": "sent",
+                            "created_at": err_msg.created_at.isoformat()
+                        }
+                    })
+                    from ..bsp_service import send_whatsapp_message
+                    send_whatsapp_message(conv.customer_phone, error_reply, org)
+                    db.close()
+                    tenant_var.reset(token)
+                    return
+
             # Fetch last 10 messages for conversational context
             msg_history = db.query(models.Message).filter(
                 models.Message.conversation_id == conv.id
@@ -94,7 +179,11 @@ def process_message_async(org_id: str, conv_id: str, message_text: str):
             pipeline_start_time = time.time()
 
             # Intent Classification
-            intent = ai_service.classify_intent(message_text, history_list)
+            # If true visual search, override intent
+            if msg_type == "image":
+                intent = "product_visual_search"
+            else:
+                intent = ai_service.classify_intent(message_text, history_list)
             logger.info(f"Classified intent for conversation {conv_id}: {intent}")
 
             # Language & Script Detection
@@ -143,71 +232,189 @@ def process_message_async(org_id: str, conv_id: str, message_text: str):
                 from sqlalchemy import or_
                 import time
                 
-                # 1. Entity Extraction
-                entities = ai_service.extract_entities(message_text, history_list)
-                logger.info(f"Extracted entities for visual search {conv_id}: {entities}")
+                # Initialize variables
+                entities = {}
+                matches = []
                 
-                # Check for ambiguous budget
-                has_budget_word = any(w in message_text.lower() for w in ["budget", "under", "between", "cheap", "cost", "price", "range"])
-                if has_budget_word and entities.get("budget_max") is None and entities.get("budget_min") is None:
-                    # Clear ambiguous response: ask a clarifying question
-                    ai_reply = "What's your budget — under 2000, 2000-4000, or above?"
-                    ai_msg = models.Message(
-                        conversation_id=conv.id,
-                        sender="ai",
-                        message_type="text",
-                        content=ai_reply,
-                        status="sent",
-                        metadata_={"intent": intent, "entities_extracted": entities}
-                    )
-                    db.add(ai_msg)
-                    db.commit()
-                    db.refresh(ai_msg)
+                # Check if this is a True Multimodal Image Visual Search
+                if msg_type == "image" and media_id:
+                    logger.info(f"Processing true visual search for image media ID: {media_id}")
+                    closest_dist = 1.0
+                    no_exact_match = False
                     
-                    # Broadcast & Send
-                    from ..connection_manager import manager
-                    manager.broadcast(str(org_uuid), "new_message", {
-                        "conversation_id": str(conv.id),
-                        "message": {
-                            "id": str(ai_msg.id),
-                            "sender": ai_msg.sender,
-                            "message_type": ai_msg.message_type,
-                            "content": ai_msg.content,
-                            "status": "sent",
-                            "created_at": ai_msg.created_at.isoformat()
-                        }
-                    })
-                    from ..bsp_service import send_whatsapp_message
-                    send_whatsapp_message(conv.customer_phone, ai_reply, org)
-                    db.close()
-                    tenant_var.reset(token)
-                    return
-
-                # Retrieve matching products
-                category = entities.get("product_type") or entities.get("fabric") or ""
-                query = db.query(models.Product).filter(
-                    models.Product.organization_id == org_uuid,
-                    models.Product.stock_count > 0
-                )
-                if category:
-                    cat_pat = f"%{category}%"
-                    query = query.filter(
-                        or_(
-                            models.Product.name.ilike(cat_pat),
-                            models.Product.fabric.ilike(cat_pat),
-                            models.Product.color.ilike(cat_pat)
+                    try:
+                        # 1. Download image bytes
+                        from ..bsp_service import download_meta_media
+                        img_bytes = download_meta_media(media_id, org)
+                        
+                        # 2. Generate image embedding
+                        logger.info("Generating image embedding via gemini-embedding-2...")
+                        img_emb = ai_service.get_image_embedding(img_bytes)
+                        
+                        if img_emb and any(v != 0.0 for v in img_emb):
+                            # 3. Query pgvector for closest matches
+                            distance_expr = models.Product.image_embedding.cosine_distance(img_emb)
+                            results = db.query(models.Product, distance_expr.label("distance")).filter(
+                                models.Product.organization_id == org_uuid,
+                                models.Product.image_embedding_status == "completed"
+                            ).order_by(distance_expr).limit(5).all()
+                            
+                            if results:
+                                closest_product, closest_dist = results[0]
+                                logger.info(f"Closest product match: SKU={closest_product.sku}, Name={closest_product.name}, Distance={closest_dist}")
+                                
+                                # 4. Honesty Guardrail check (threshold 0.45)
+                                if closest_dist < 0.45:
+                                    logger.info(f"Confident match found: SKU={closest_product.sku} (dist={closest_dist})")
+                                    matches = [closest_product]
+                                    
+                                    # 5. Extract entities for secondary modifiers
+                                    entities = ai_service.extract_entities(message_text, history_list)
+                                    
+                                    # Handle "other colors" / "this in color X"
+                                    has_color_req = entities.get("color")
+                                    has_other_req = any(w in message_text.lower() for w in ["other", "vere", "colors", "designs", "unnaya"])
+                                    
+                                    if has_color_req:
+                                        # Fetch same category but matching color
+                                        color_matches = db.query(models.Product).filter(
+                                            models.Product.organization_id == org_uuid,
+                                            models.Product.category_id == closest_product.category_id,
+                                            models.Product.color.ilike(f"%{entities['color']}%"),
+                                            models.Product.stock_count > 0,
+                                            models.Product.sku != closest_product.sku
+                                        ).limit(4).all()
+                                        matches.extend(color_matches)
+                                    elif has_other_req:
+                                        # Fetch other products in same category/design group
+                                        other_matches = db.query(models.Product).filter(
+                                            models.Product.organization_id == org_uuid,
+                                            models.Product.category_id == closest_product.category_id,
+                                            models.Product.stock_count > 0,
+                                            models.Product.sku != closest_product.sku
+                                        ).limit(4).all()
+                                        matches.extend(other_matches)
+                                else:
+                                    # Guardrail triggered: no exact match
+                                    logger.info(f"No confident match found. Distance={closest_dist}. Sending honesty response.")
+                                    no_exact_match = True
+                                    
+                                    # Send visual honesty message
+                                    honesty_reply = "We don't have this exact saree design in our catalog right now, but here are some similar available designs you might like!"
+                                    from ..bsp_service import send_whatsapp_message
+                                    send_whatsapp_message(conv.customer_phone, honesty_reply, org)
+                                    
+                                    honesty_msg = models.Message(
+                                        conversation_id=conv.id,
+                                        sender="ai",
+                                        message_type="text",
+                                        content=honesty_reply,
+                                        status="sent"
+                                    )
+                                    db.add(honesty_msg)
+                                    db.commit()
+                                    db.refresh(honesty_msg)
+                                    
+                                    from ..connection_manager import manager
+                                    manager.broadcast(str(org_uuid), "new_message", {
+                                        "conversation_id": str(conv.id),
+                                        "message": {
+                                            "id": str(honesty_msg.id),
+                                            "sender": honesty_msg.sender,
+                                            "message_type": honesty_msg.message_type,
+                                            "content": honesty_msg.content,
+                                            "status": "sent",
+                                            "created_at": honesty_msg.created_at.isoformat()
+                                        }
+                                    })
+                                    
+                                    # Keep matches as the top 3 visually similar fallbacks
+                                    matches = [r[0] for r in results[:3]]
+                                    entities = {"no_exact_match": True}
+                            else:
+                                logger.info("No completed product image embeddings found in database.")
+                                no_exact_match = True
+                        else:
+                            logger.error("Failed to generate image embedding.")
+                            no_exact_match = True
+                    except Exception as img_err:
+                        logger.error(f"Failed true visual similarity search pipeline: {img_err}", exc_info=True)
+                        no_exact_match = True
+                        
+                    if no_exact_match and not matches:
+                        # Standard text-based fallback when database query failed
+                        entities = ai_service.extract_entities(message_text, history_list)
+                        category = entities.get("product_type") or entities.get("fabric") or "Saree"
+                        matches = db.query(models.Product).filter(
+                            models.Product.organization_id == org_uuid,
+                            models.Product.stock_count > 0
+                        ).limit(3).all()
+                else:
+                    # Text-based visual search query fallback (e.g. "pics pettu")
+                    entities = ai_service.extract_entities(message_text, history_list)
+                    logger.info(f"Extracted entities for visual search {conv_id}: {entities}")
+                    
+                    # Check for ambiguous budget
+                    has_budget_word = any(w in message_text.lower() for w in ["budget", "under", "between", "cheap", "cost", "price", "range"])
+                    if has_budget_word and entities.get("budget_max") is None and entities.get("budget_min") is None:
+                        # Clear ambiguous response: ask a clarifying question
+                        ai_reply = "What's your budget — under 2000, 2000-4000, or above?"
+                        ai_msg = models.Message(
+                            conversation_id=conv.id,
+                            sender="ai",
+                            message_type="text",
+                            content=ai_reply,
+                            status="sent",
+                            metadata_={"intent": intent, "entities_extracted": entities}
                         )
-                    )
-                if entities.get("budget_min") is not None:
-                    query = query.filter(models.Product.price >= entities.get("budget_min"))
-                if entities.get("budget_max") is not None:
-                    query = query.filter(models.Product.price <= entities.get("budget_max"))
-                if entities.get("color"):
-                    query = query.filter(models.Product.color.ilike(f"%{entities['color']}%"))
-                if entities.get("fabric"):
-                    query = query.filter(models.Product.fabric.ilike(f"%{entities['fabric']}%"))
+                        db.add(ai_msg)
+                        db.commit()
+                        db.refresh(ai_msg)
+                        
+                        # Broadcast & Send
+                        from ..connection_manager import manager
+                        manager.broadcast(str(org_uuid), "new_message", {
+                            "conversation_id": str(conv.id),
+                            "message": {
+                                "id": str(ai_msg.id),
+                                "sender": ai_msg.sender,
+                                "message_type": ai_msg.message_type,
+                                "content": ai_msg.content,
+                                "status": "sent",
+                                "created_at": ai_msg.created_at.isoformat()
+                            }
+                        })
+                        from ..bsp_service import send_whatsapp_message
+                        send_whatsapp_message(conv.customer_phone, ai_reply, org)
+                        db.close()
+                        tenant_var.reset(token)
+                        return
 
-                matches = query.order_by(models.Product.price.asc()).all()
+                    # Retrieve matching products
+                    category = entities.get("product_type") or entities.get("fabric") or ""
+                    query = db.query(models.Product).filter(
+                        models.Product.organization_id == org_uuid,
+                        models.Product.stock_count > 0
+                    )
+                    if category:
+                        cat_pat = f"%{category}%"
+                        query = query.filter(
+                            or_(
+                                models.Product.name.ilike(cat_pat),
+                                models.Product.fabric.ilike(cat_pat),
+                                models.Product.color.ilike(cat_pat)
+                            )
+                        )
+                    if entities.get("budget_min") is not None:
+                        query = query.filter(models.Product.price >= entities.get("budget_min"))
+                    if entities.get("budget_max") is not None:
+                        query = query.filter(models.Product.price <= entities.get("budget_max"))
+                    if entities.get("color"):
+                        query = query.filter(models.Product.color.ilike(f"%{entities['color']}%"))
+                    if entities.get("fabric"):
+                        query = query.filter(models.Product.fabric.ilike(f"%{entities['fabric']}%"))
+
+                    matches = query.order_by(models.Product.price.asc()).all()
 
                 # Response Threshold Routing
                 if len(matches) == 0:
@@ -646,7 +853,7 @@ def process_message_async(org_id: str, conv_id: str, message_text: str):
                     "content": ai_msg.content,
                     "status": ai_msg.status,
                     "error_message": ai_msg.error_message,
-                    "created_at": ai_msg.created_at.isoformat()
+                    "created_at": (ai_msg.created_at or datetime.now(timezone.utc)).isoformat()
                 }
             })
             
@@ -767,7 +974,7 @@ def process_message_async(org_id: str, conv_id: str, message_text: str):
                     "message_type": fallback_msg.message_type,
                     "content": fallback_msg.content,
                     "status": "sent",
-                    "created_at": fallback_msg.created_at.isoformat()
+                    "created_at": (fallback_msg.created_at or datetime.now(timezone.utc)).isoformat()
                 }
             })
     except Exception as e:
@@ -826,6 +1033,9 @@ async def receive_whatsapp_message(
     message_text = ""
     customer_name = "Customer"
     message_id = None
+    msg_type = "text"
+    media_id = None
+    mime_type = None
     import time
     
     # 1. Twilio Format parsing
@@ -882,11 +1092,24 @@ async def receive_whatsapp_message(
             if "messages" in value:
                 message = value["messages"][0]
                 customer_phone = message["from"]
-                message_text = message.get("text", {}).get("body", "").strip()
+                msg_type = message.get("type", "text")
                 contacts = value.get("contacts", [{}])[0]
                 customer_name = contacts.get("profile", {}).get("name", "Customer")
                 brand_phone = value.get("metadata", {}).get("display_phone_number")
                 message_id = message.get("id")
+                
+                if msg_type == "text":
+                    message_text = message.get("text", {}).get("body", "").strip()
+                elif msg_type == "audio":
+                    audio = message.get("audio", {})
+                    media_id = audio.get("id")
+                    mime_type = audio.get("mime_type") or "audio/ogg"
+                    message_text = "🎙️ [Voice Message]"
+                elif msg_type == "image":
+                    image = message.get("image", {})
+                    media_id = image.get("id")
+                    mime_type = image.get("mime_type") or "image/jpeg"
+                    message_text = image.get("caption", "").strip() or "🖼️ [Image]"
         except (KeyError, IndexError) as e:
             logger.error(f"Failed to parse Meta Cloud API payload: {e}")
             return {"status": "ignored", "reason": "Unparseable payload structure"}
@@ -896,6 +1119,13 @@ async def receive_whatsapp_message(
         brand_phone = body.get("brand_phone")
         message_text = body.get("message", "")
         customer_name = body.get("customer_name", "Customer")
+        msg_type = body.get("message_type", "text")
+        media_id = body.get("media_id")
+        mime_type = body.get("mime_type")
+        if msg_type == "audio" and not message_text:
+            message_text = "🎙️ [Voice Message]"
+        elif msg_type == "image" and not message_text:
+            message_text = "🖼️ [Image]"
         msg_hash = hashlib.md5(message_text.encode("utf-8")).hexdigest()[:8] if message_text else "empty"
         message_id = body.get("message_id") or f"test_{customer_phone}_{msg_hash}_{int(time.time())}"
 
@@ -955,8 +1185,9 @@ async def receive_whatsapp_message(
     cust_msg = models.Message(
         conversation_id=conv.id,
         sender="customer",
-        message_type="text",
-        content=message_text
+        message_type=msg_type,
+        content=message_text,
+        media_url=media_id
     )
     db.add(cust_msg)
     db.commit()
@@ -984,7 +1215,15 @@ async def receive_whatsapp_message(
     })
 
     # Delegate LLM and database intensive work to FastAPI BackgroundTasks
-    background_tasks.add_task(process_message_async, str(org.id), str(conv.id), message_text)
+    background_tasks.add_task(
+        process_message_async,
+        str(org.id),
+        str(conv.id),
+        message_text,
+        msg_type=msg_type,
+        media_id=media_id,
+        mime_type=mime_type
+    )
 
     # Return 200 OK immediately to Meta
     return {"status": "processing"}
@@ -995,6 +1234,9 @@ class SimulatedPayload(BaseModel):
     message: str
     customer_name: Optional[str] = "Customer"
     brand_phone: Optional[str] = None
+    message_type: Optional[str] = "text"
+    media_id: Optional[str] = None
+    mime_type: Optional[str] = None
 
 @router.post("/whatsapp/simulated", responses={401: {"description": "Unauthorized"}})
 def receive_simulated_whatsapp_message(
@@ -1011,7 +1253,15 @@ def receive_simulated_whatsapp_message(
     customer_phone = payload.customer_phone
     message_text = payload.message
     customer_name = payload.customer_name or "Customer"
+    msg_type = payload.message_type or "text"
+    media_id = payload.media_id
+    mime_type = payload.mime_type
     
+    if msg_type == "audio" and not message_text:
+        message_text = "🎙️ [Voice Message]"
+    elif msg_type == "image" and not message_text:
+        message_text = "🖼️ [Image]"
+        
     # Set tenant context
     tenant_var.set(org_id)
     db.organization_id = org_id
@@ -1040,8 +1290,9 @@ def receive_simulated_whatsapp_message(
     cust_msg = models.Message(
         conversation_id=conv.id,
         sender="customer",
-        message_type="text",
-        content=message_text
+        message_type=msg_type,
+        content=message_text,
+        media_url=media_id
     )
     db.add(cust_msg)
     db.commit()
@@ -1069,7 +1320,15 @@ def receive_simulated_whatsapp_message(
     })
 
     # Delegate LLM processing to background_tasks to guarantee execution without Redis dependency
-    background_tasks.add_task(process_message_async, str(org_id), str(conv.id), message_text)
+    background_tasks.add_task(
+        process_message_async,
+        str(org_id),
+        str(conv.id),
+        message_text,
+        msg_type=msg_type,
+        media_id=media_id,
+        mime_type=mime_type
+    )
 
     return {"status": "processing", "conversation_id": str(conv.id)}
 

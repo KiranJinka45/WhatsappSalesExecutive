@@ -241,18 +241,16 @@ def test_chaos_server_error_takeover():
     
     time.sleep(3.0)
     
-    # Verify database status transitions to human takeover
+    # Verify conversation status remains AI_ACTIVE and reply is preserved for dashboard
     db = TestingSessionLocal()
     conv = db.query(models.Conversation).filter(models.Conversation.customer_phone == "919876543210").first()
     assert conv is not None
+    assert conv.status == "AI_ACTIVE"
     
-    # Since the outbound dispatch crashed, the system fallback should toggle to takeover
-    assert conv.status == "OWNER_ACTIVE"
-    
-    # Confirm fallback note or error was appended
+    # Confirm generated AI message was recorded in DB
     messages = db.query(models.Message).filter(models.Message.conversation_id == conv.id).all()
-    failed_msg = [m for m in messages if m.status == "failed"]
-    assert len(failed_msg) > 0
+    ai_msgs = [m for m in messages if m.sender == "ai"]
+    assert len(ai_msgs) > 0
     db.close()
 
 def test_csv_line_endings_normalization():

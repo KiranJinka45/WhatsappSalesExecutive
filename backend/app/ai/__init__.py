@@ -1,4 +1,4 @@
-from .client import get_client, get_embedding, generate_content
+from .client import get_client, get_embedding, generate_content, get_image_embedding, transcribe_audio
 from .intent_engine import classify_intent, detect_language
 from .entity_extractor import extract_entities
 from .retrieval_validator import validate_retrieval

@@ -274,3 +274,105 @@ def get_embedding(text: str) -> Optional[List[float]]:
     except Exception as e:
         logger.error(f"Failed to fetch embedding: {e}")
     return [0.0] * 768
+
+def get_image_embedding(image_bytes: bytes) -> Optional[List[float]]:
+    """
+    Generates a multimodal embedding for image bytes using gemini-embedding-2.
+    """
+    client = get_gemini_client()
+    if not client:
+        logger.error("Gemini client not initialized for image embedding.")
+        return [0.0] * 3072
+    try:
+        from google.genai import types
+        part = types.Part.from_bytes(data=image_bytes, mime_type="image/png")
+        response = client.models.embed_content(
+            model="models/gemini-embedding-2",
+            contents=part
+        )
+        if response.embeddings:
+            return response.embeddings[0].values
+    except Exception as e:
+        logger.error(f"Failed to fetch image embedding: {e}")
+    return [0.0] * 3072
+
+def transcribe_audio(audio_bytes: bytes, mime_type: str = "audio/ogg") -> str:
+    """
+    Transcribes audio bytes to text with triple-redundancy:
+    1. Groq Whisper (fast and free/cheap)
+    2. OpenAI Whisper
+    3. Gemini 2.0 Flash (native multimodal fallback)
+    """
+    import tempfile
+    import os
+
+    # Determine extension
+    ext = ".ogg"
+    if "wav" in mime_type:
+        ext = ".wav"
+    elif "mp3" in mime_type:
+        ext = ".mp3"
+    elif "m4a" in mime_type:
+        ext = ".m4a"
+
+    # Write audio bytes to temporary file for Whisper APIs
+    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+        tmp.write(audio_bytes)
+        tmp_path = tmp.name
+
+    try:
+        # 1. Try Groq Whisper
+        groq_client = get_groq_client()
+        if groq_client:
+            try:
+                with open(tmp_path, "rb") as f:
+                    res = groq_client.audio.transcriptions.create(
+                        model="whisper-large-v3",
+                        file=f
+                    )
+                if res.text:
+                    logger.info("Audio transcription succeeded via Groq Whisper.")
+                    return res.text.strip()
+            except Exception as e:
+                logger.warning(f"Groq Whisper transcription failed: {e}. Trying OpenAI...")
+
+        # 2. Try OpenAI Whisper
+        openai_client = get_openai_client()
+        if openai_client:
+            try:
+                with open(tmp_path, "rb") as f:
+                    res = openai_client.audio.transcriptions.create(
+                        model="whisper-1",
+                        file=f
+                    )
+                if res.text:
+                    logger.info("Audio transcription succeeded via OpenAI Whisper.")
+                    return res.text.strip()
+            except Exception as e:
+                logger.warning(f"OpenAI Whisper transcription failed: {e}. Trying Gemini multimodal fallback...")
+
+        # 3. Try Gemini multimodal fallback
+        gemini_client = get_gemini_client()
+        if gemini_client:
+            try:
+                from google.genai import types
+                part = types.Part.from_bytes(data=audio_bytes, mime_type=mime_type)
+                res = gemini_client.models.generate_content(
+                    model="models/gemini-2.0-flash",
+                    contents=[
+                        part,
+                        "Please transcribe this voice message precisely into text. Output only the transcript, nothing else. If it is in Romanized Telugu or Hinglish, write exactly what they said in Romanized English script. If in native script, write in native script."
+                    ]
+                )
+                if res.text:
+                    logger.info("Audio transcription succeeded via Gemini multimodal.")
+                    return res.text.strip()
+            except Exception as e:
+                logger.error(f"Gemini multimodal transcription failed: {e}")
+
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+    raise ValueError("All speech-to-text engines failed to transcribe the audio.")
+

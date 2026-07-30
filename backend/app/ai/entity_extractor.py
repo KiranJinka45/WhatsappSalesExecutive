@@ -59,15 +59,23 @@ def _rule_based_extract(message: str) -> Dict[str, Any]:
         entities["budget_min"] = float(between_match.group(1))
         entities["budget_max"] = float(between_match.group(2))
     else:
-        # 2. Max limit (e.g. "under 5000", "below 10000", "less than 3000")
+        # 2. Max limit (e.g. "under 5000", "below 10000", "less than 3000", "2000 lo", "2000 lopala")
         max_match = re.search(r"(?:under|below|less than|within|in)\s*(?:rs\.?|inr)?\s*(\d+)", msg_lower)
+        telugu_max_match = re.search(r"(\d+)\s*(?:rs\.?|inr)?\s*(?:lo|lopala|range|budget)\b", msg_lower)
+        
         if max_match:
             entities["budget_max"] = float(max_match.group(1))
+        elif telugu_max_match:
+            entities["budget_max"] = float(telugu_max_match.group(1))
         
-        # 3. Min limit (e.g. "above 3000", "more than 2000", "starting from 1500")
+        # 3. Min limit (e.g. "above 3000", "more than 2000", "starting from 1500", "1500 nunchi")
         min_match = re.search(r"(?:above|more than|greater than|starting|from)\s*(?:rs\.?|inr)?\s*(\d+)", msg_lower)
+        telugu_min_match = re.search(r"(\d+)\s*(?:rs\.?|inr)?\s*(?:nunchi|nundi|above|kante ekkuva)\b", msg_lower)
+        
         if min_match:
             entities["budget_min"] = float(min_match.group(1))
+        elif telugu_min_match:
+            entities["budget_min"] = float(telugu_min_match.group(1))
 
     return entities
 

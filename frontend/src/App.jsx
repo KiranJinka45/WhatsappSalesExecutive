@@ -6,6 +6,7 @@ import Conversations from './components/Conversations';
 import Catalog from './components/Catalog';
 import Settings from './components/Settings';
 import Analytics from './components/Analytics';
+import Integrations from './components/Integrations';
 import PublicCatalog from './components/PublicCatalog';
 import { apiFetch } from './api';
 
@@ -160,6 +161,13 @@ export default function App() {
           >
             Analytics
           </button>
+          <button
+            className={`btn ${activeTab === 'integrations' ? 'btn-primary' : 'btn-secondary'}`}
+            style={styles.navBtn}
+            onClick={() => setActiveTab('integrations')}
+          >
+            Integrations
+          </button>
         </nav>
 
         <button className="btn btn-secondary" style={styles.logoutBtn} onClick={handleLogout}>
@@ -173,6 +181,7 @@ export default function App() {
         {activeTab === 'catalog' && <Catalog token={token} />}
         {activeTab === 'settings' && <Settings token={token} />}
         {activeTab === 'analytics' && <Analytics token={token} />}
+        {activeTab === 'integrations' && <Integrations />}
       </main>
     </div>
   );

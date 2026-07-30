@@ -60,9 +60,8 @@ def send_whatsapp_message(
             logger.error(f"Exception during WasenderAPI request: {e}", exc_info=True)
             return {"status": "failed", "error": str(e), "mock": False}
 
-    # 2. Check if destination phone is a simulated/sandbox test number or credentials are missing
-    is_sandbox_number = any(test_p in clean_phone for test_p in ["990000", "555157", "123456", "000000", "555"]) or len(clean_phone) < 10
-    if is_sandbox_number or (not (token and phone_id) and not is_emulator):
+    # 2. Check if credentials are provided for live dispatch
+    if not (token and phone_id) and not is_emulator:
         logger.info(f"[MOCK/SANDBOX WHATSAPP DISPATCH] Simulated message to {clean_phone}: '{content}'")
         return {
             "status": "sent",
@@ -127,3 +126,52 @@ def send_whatsapp_message(
             "error": str(e),
             "mock": False
         }
+
+def download_meta_media(media_id: str, org: models.Organization) -> bytes:
+    """
+    Downloads media file (audio/image) bytes from Meta Cloud API.
+    """
+    policies = org.policies or {}
+    token = policies.get("whatsapp_access_token") or getattr(settings, "WHATSAPP_ACCESS_TOKEN", None)
+    
+    # Standardize sandbox/mock check
+    is_sandbox = any(test_p in str(org.whatsapp_number or "") for test_p in ["990000", "555157", "123456", "000000", "555"]) or not token
+
+    # Check if we are running in simulator mode or sandbox
+    if is_sandbox:
+        logger.info(f"[MOCK MEDIA DOWNLOAD] Mocking download for media ID: {media_id}")
+        # Return a simple 1-pixel PNG bytes or silent wav bytes depending on context
+        # We'll return a simple dummy 1x1 PNG or silent wav depending on file ID hints
+        if "audio" in media_id or "voice" in media_id:
+            return b'RIFF$\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x80>\x00\x00\x80>\x00\x00\x01\x00\x08\x00data\x00\x00\x00\x00'
+        return b'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+
+    url = f"{settings.WHATSAPP_API_BASE_URL}/{settings.META_API_VERSION}/{media_id}"
+    headers = {
+        "Authorization": f"Bearer {token}"
+    }
+
+    try:
+        # Step 1: Retrieve media metadata to get download URL
+        response = httpx.get(url, headers=headers, timeout=15.0)
+        if response.status_code != 200:
+            logger.error(f"Meta media metadata fetch failed: {response.text}")
+            raise ValueError(f"Failed to fetch media metadata from Meta. Status: {response.status_code}")
+        
+        meta_data = response.json()
+        download_url = meta_data.get("url")
+        if not download_url:
+            logger.error(f"No url found in Meta media metadata response: {meta_data}")
+            raise ValueError("No download URL returned from Meta media metadata.")
+
+        # Step 2: Download the binary media content
+        media_response = httpx.get(download_url, headers=headers, timeout=30.0)
+        if media_response.status_code != 200:
+            logger.error(f"Meta media binary download failed: {media_response.text}")
+            raise ValueError(f"Failed to download media binary from Meta. Status: {media_response.status_code}")
+        
+        return media_response.content
+    except Exception as e:
+        logger.error(f"Error downloading media {media_id}: {e}", exc_info=True)
+        raise
+

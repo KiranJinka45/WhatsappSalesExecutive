@@ -40,8 +40,7 @@ class CatalogRow(BaseModel):
 
 def generate_product_embedding_task(db_session_factory, product_id: str):
     """
-    Background task to generate product vector embedding asynchronously.
-    Updates embedding_status to 'completed' or 'failed'.
+    Background task to generate product vector embedding and image embedding asynchronously.
     """
     db = db_session_factory()
     token = tenant_var.set(None)  # Bypass tenant filtering to query globally by ID
@@ -50,6 +49,7 @@ def generate_product_embedding_task(db_session_factory, product_id: str):
         if not product:
             return
             
+        # 1. Text embedding generation
         product.embedding_status = "processing"
         db.commit()
         
@@ -59,26 +59,96 @@ def generate_product_embedding_task(db_session_factory, product_id: str):
         from .ai_service import get_embedding
         embedding = get_embedding(embed_text)
         
-        # Verify embedding is valid
         if embedding and any(v != 0.0 for v in embedding):
             product.embedding = embedding
             product.embedding_status = "completed"
         else:
             product.embedding_status = "failed"
-            
         db.commit()
+        
+        # 2. Image embedding generation (multimodal embedding)
+        if product.image_urls and len(product.image_urls) > 0:
+            product.image_embedding_status = "processing"
+            db.commit()
+            
+            first_img_url = product.image_urls[0]
+            # Simple placeholder bypass
+            if "via.placeholder.com" in first_img_url or "placehold.co" in first_img_url:
+                product.image_embedding_status = "failed"
+                db.commit()
+            else:
+                try:
+                    import httpx
+                    logger.info(f"Downloading catalog image for embedding: {first_img_url}")
+                    img_resp = httpx.get(first_img_url, timeout=20.0)
+                    if img_resp.status_code == 200:
+                        img_bytes = img_resp.content
+                        from .ai_service import get_image_embedding
+                        img_emb = get_image_embedding(img_bytes)
+                        if img_emb and any(v != 0.0 for v in img_emb):
+                            product.image_embedding = img_emb
+                            product.image_embedding_status = "completed"
+                            logger.info(f"Image embedding succeeded for product ID: {product_id}")
+                        else:
+                            product.image_embedding_status = "failed"
+                            logger.error(f"Image embedding generated zero/empty vector for product ID: {product_id}")
+                    else:
+                        product.image_embedding_status = "failed"
+                        logger.error(f"Failed to download catalog image for product ID: {product_id}. Status: {img_resp.status_code}")
+                except Exception as img_err:
+                    product.image_embedding_status = "failed"
+                    logger.error(f"Image embedding failed for product {product_id}: {img_err}", exc_info=True)
+                db.commit()
+        else:
+            product.image_embedding_status = "none"
+            db.commit()
+            
     except Exception as e:
         logger.error(f"Failed async embedding for product {product_id}: {e}")
         try:
             product = db.query(models.Product).filter(models.Product.id == product_id).first()
             if product:
                 product.embedding_status = "failed"
+                product.image_embedding_status = "failed"
                 db.commit()
-        except Exception as e:
-            logger.warning("Error resetting database session during catalog import: %s", str(e))
+        except Exception as db_err:
+            logger.warning("Error resetting database session during catalog import: %s", str(db_err))
     finally:
         db.close()
         tenant_var.reset(token)
+
+def backfill_missing_image_embeddings(db_session_factory):
+    """
+    Scans the database for catalog products with images that are missing image embeddings,
+    and runs the embedding generator task for them in a background thread.
+    """
+    db = db_session_factory()
+    token = tenant_var.set(None)
+    try:
+        # Find products that have image_urls but image_embedding is NULL or image_embedding_status is pending/failed
+        from sqlalchemy import and_, or_
+        pending_products = db.query(models.Product).filter(
+            models.Product.image_urls != None,
+            models.Product.image_embedding_status == "pending"
+        ).all()
+        
+        if pending_products:
+            logger.info(f"Backfill: Found {len(pending_products)} products with pending image embeddings. Scheduling tasks...")
+            import threading
+            for prod in pending_products:
+                # Run embedding task in a background daemon thread
+                t = threading.Thread(
+                    target=generate_product_embedding_task,
+                    args=(db_session_factory, str(prod.id)),
+                    daemon=True
+                )
+                t.start()
+    except Exception as e:
+        logger.error(f"Error during image embedding backfill scan: {e}")
+    finally:
+        db.close()
+        tenant_var.reset(token)
+
 
 def parse_and_sync_catalog(
     db: Session, 

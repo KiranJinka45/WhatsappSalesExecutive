@@ -55,30 +55,32 @@ Latest customer message:
 
 Respond with ONLY the exact intent name from: product_search, product_visual_search, discount_request, bulk_order, complaint, refund, inventory_query, shipping_exception, general_query. Do not include any other text or punctuation.
 """
+    def _rule_fallback(msg: str) -> str:
+        msg_lower = msg.lower()
+        if any(w in msg_lower for w in ["pic", "pics", "photo", "photos", "image", "images", "visual", "pettu", "choopinchu", "chupinchu"]): return "product_visual_search"
+        if any(w in msg_lower for w in ["discount", "off", "less", "reduce", "cheap", "coupon", "promo", "bargain", "cut", "negotiate", "deal", "thakkuva", "thagginchandi", "tagginchandi", "thakuva", "taggandi"]): return "discount_request"
+        if any(w in msg_lower for w in ["bulk", "wholesale", "quantity", "pieces", "qty", "piece", "wholesale range"]): return "bulk_order"
+        if any(w in msg_lower for w in ["damaged", "torn", "defect", "defective", "dirty", "wrong item", "complaint", "worst", "fraud", "chimpiri", "poyindhi", "karab"]): return "complaint"
+        if any(w in msg_lower for w in ["refund", "money back", "cash back", "chargeback", "dispute", "return", "venakki", "wapas"]): return "refund"
+        if any(w in msg_lower for w in ["reserve", "hold", "keep aside", "save", "book", "stock", "available", "in stock", "size", "undha", "unnaya", "leva"]): return "inventory_query"
+        if any(w in msg_lower for w in ["tonight", "today", "express", "urgent", "quick delivery", "rush", "same day", "tondaraga"]): return "shipping_exception"
+        if any(w in msg_lower for w in ["open", "hours", "timing", "address", "location", "where is", "map", "hello", "hi", "hey", "thanks", "namaste", "namaskaram", "andi"]): return "general_query"
+        return "product_search"
+
     try:
         response = generate_content(prompt, strategy="fast")
         
-        # Smart keyword-based NLU fallback for offline sandbox testing or LLM failure
-        if not response.text:
-            msg_lower = message_content.lower()
-            if any(w in msg_lower for w in ["pic", "pics", "photo", "photos", "image", "images", "visual"]): return "product_visual_search"
-            if any(w in msg_lower for w in ["discount", "off", "less", "reduce", "cheap", "coupon", "promo", "bargain", "cut", "negotiate", "deal"]): return "discount_request"
-            if any(w in msg_lower for w in ["bulk", "wholesale", "quantity", "pieces", "qty", "piece"]): return "bulk_order"
-            if any(w in msg_lower for w in ["damaged", "torn", "defect", "defective", "dirty", "wrong item", "complaint", "worst", "fraud"]): return "complaint"
-            if any(w in msg_lower for w in ["refund", "money back", "cash back", "chargeback", "dispute", "return"]): return "refund"
-            if any(w in msg_lower for w in ["reserve", "hold", "keep aside", "save", "book", "stock", "available", "in stock", "size"]): return "inventory_query"
-            if any(w in msg_lower for w in ["tonight", "today", "express", "urgent", "quick delivery", "rush", "same day"]): return "shipping_exception"
-            if any(w in msg_lower for w in ["open", "hours", "timing", "address", "location", "where is", "map", "hello", "hi", "hey", "thanks"]): return "general_query"
-            return "product_search"
+        if not response or not response.text:
+            return _rule_fallback(message_content)
 
         intent = response.text.strip().lower()
         for valid in STRUCTURED_INTENTS:
             if valid in intent:
                 return valid
-        return "general_query"
+        return _rule_fallback(message_content)
     except Exception as e:
         logger.error(f"Failed to classify intent: {e}")
-        return "general_query"
+        return _rule_fallback(message_content)
 
 
 def detect_language(message_content: str, history: List[Dict[str, str]] = None) -> Dict[str, Any]:
