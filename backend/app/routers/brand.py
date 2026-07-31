@@ -137,6 +137,36 @@ def handle_embedded_signup(
         "whatsapp_business_account_id": org.whatsapp_business_account_id
     }
 
+class TestConnectionRequest(BaseModel):
+    test_phone: Optional[str] = None
+
+@router.post("/whatsapp/test-connection")
+def test_whatsapp_connection(
+    payload: Optional[TestConnectionRequest] = None,
+    org: models.Organization = Depends(security.get_current_org),
+    current_user: models.User = Depends(security.require_role("owner"))
+):
+    """
+    Tests Meta Cloud API / WhatsApp dispatch using current organization credentials.
+    """
+    from ..bsp_service import send_whatsapp_message
+    target_phone = (payload and payload.test_phone) or org.whatsapp_number or "+919900001111"
+    
+    test_msg = f"Hello! This is a test message from Closely AI to confirm your WhatsApp Meta Cloud API integration is live and active for {org.name}! 🚀"
+    res = send_whatsapp_message(target_phone, test_msg, org)
+    
+    if res.get("status") == "failed":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"WhatsApp dispatch test failed: {res.get('error', 'Unknown error')}"
+        )
+        
+    return {
+        "status": "success",
+        "message": f"Test message dispatched to {target_phone} successfully!",
+        "details": res
+    }
+
 @router.delete("/profile", status_code=status.HTTP_204_NO_CONTENT)
 def delete_brand_profile(
     db: Session = Depends(get_db),
