@@ -16,6 +16,7 @@ export default function Catalog({ token }) {
   const [sizes, setSizes] = useState('Free Size');
   const [stockCount, setStockCount] = useState('10');
   const [description, setDescription] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
   const [file, setFile] = useState(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -67,6 +68,7 @@ export default function Catalog({ token }) {
     setSizes('Free Size');
     setStockCount('10');
     setDescription('');
+    setImageUrl('');
   };
 
   const handleEditClick = (product) => {
@@ -81,6 +83,7 @@ export default function Catalog({ token }) {
     setSizes(Array.isArray(product.sizes) ? product.sizes.join(', ') : 'Free Size');
     setStockCount(product.stock_count !== undefined ? String(product.stock_count) : '10');
     setDescription(product.description || '');
+    setImageUrl(Array.isArray(product.image_urls) ? product.image_urls.join(', ') : '');
     setError('');
     setSuccess('');
   };
@@ -91,6 +94,7 @@ export default function Catalog({ token }) {
     setSuccess('');
 
     const sizeArray = sizes.split(',').map(s => s.trim()).filter(Boolean);
+    const imageUrlArray = imageUrl.split(',').map(s => s.trim()).filter(Boolean);
 
     const payload = {
       sku,
@@ -103,7 +107,7 @@ export default function Catalog({ token }) {
       sizes: sizeArray,
       stock_count: parseInt(stockCount),
       description,
-      image_urls: [],
+      image_urls: imageUrlArray,
       video_urls: []
     };
 
@@ -279,6 +283,11 @@ export default function Catalog({ token }) {
                 <label style={styles.label}>Stock</label>
                 <input type="number" className="form-input" style={styles.compactInput} value={stockCount} onChange={e => setStockCount(e.target.value)} />
               </div>
+            </div>
+
+            <div style={styles.inputGroup}>
+              <label style={styles.label}>Image URL (comma separated for multiple)</label>
+              <input type="text" className="form-input" style={styles.compactInput} placeholder="https://example.com/image.jpg" value={imageUrl} onChange={e => setImageUrl(e.target.value)} />
             </div>
 
             <div style={styles.inputGroup}>
