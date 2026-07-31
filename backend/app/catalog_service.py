@@ -72,15 +72,15 @@ def generate_product_embedding_task(db_session_factory, product_id: str):
             db.commit()
             
             first_img_url = product.image_urls[0]
-            # Simple placeholder bypass
-            if "via.placeholder.com" in first_img_url or "placehold.co" in first_img_url:
+            # Skip known placeholders and fake/invalid domains
+            if any(domain in first_img_url for domain in ["via.placeholder.com", "placehold.co", "images.closely.ai", "example.com"]):
                 product.image_embedding_status = "failed"
                 db.commit()
             else:
                 try:
                     import httpx
                     logger.info(f"Downloading catalog image for embedding: {first_img_url}")
-                    img_resp = httpx.get(first_img_url, timeout=20.0, verify=False, follow_redirects=True)
+                    img_resp = httpx.get(first_img_url, timeout=10.0, verify=False, follow_redirects=True)
                     if img_resp.status_code == 200:
                         img_bytes = img_resp.content
                         from .ai_service import get_image_embedding
@@ -94,10 +94,10 @@ def generate_product_embedding_task(db_session_factory, product_id: str):
                             logger.error(f"Image embedding generated zero/empty vector for product ID: {product_id}")
                     else:
                         product.image_embedding_status = "failed"
-                        logger.error(f"Failed to download catalog image for product ID: {product_id}. Status: {img_resp.status_code}")
+                        logger.warning(f"Failed to download catalog image for product ID: {product_id}. Status: {img_resp.status_code}")
                 except Exception as img_err:
                     product.image_embedding_status = "failed"
-                    logger.error(f"Image embedding failed for product {product_id}: {img_err}", exc_info=True)
+                    logger.warning(f"Image download/embedding skipped for product {product_id}: {img_err}")
                 db.commit()
         else:
             product.image_embedding_status = "none"
