@@ -266,7 +266,7 @@ def get_embedding(text: str) -> Optional[List[float]]:
         return [0.0] * 768
     try:
         response = client.models.embed_content(
-            model="text-embedding-004",
+            model="gemini-embedding-001",
             contents=text
         )
         if response.embeddings:
