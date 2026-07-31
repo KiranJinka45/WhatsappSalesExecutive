@@ -265,9 +265,13 @@ def get_embedding(text: str) -> Optional[List[float]]:
     if not client:
         return [0.0] * 768
     try:
+        from google.genai import types
         response = client.models.embed_content(
             model="gemini-embedding-001",
-            contents=text
+            contents=text,
+            config=types.EmbedContentConfig(
+                output_dimensionality=768
+            )
         )
         if response.embeddings:
             return response.embeddings[0].values
