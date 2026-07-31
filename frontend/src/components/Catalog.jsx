@@ -326,6 +326,23 @@ export default function Catalog({ token }) {
                   />
                 </label>
               </div>
+              {imageUrl && (
+                <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  {imageUrl.split(',').map((url, idx) => {
+                    const trimmed = url.trim();
+                    if (!trimmed) return null;
+                    return (
+                      <a key={idx} href={trimmed} target="_blank" rel="noopener noreferrer" title="Click to view full image">
+                        <img 
+                          src={trimmed} 
+                          alt="Preview" 
+                          style={{ width: '50px', height: '50px', objectFit: 'cover', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer' }} 
+                        />
+                      </a>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             <div style={styles.inputGroup}>

@@ -69,6 +69,9 @@ async def upload_catalog_image(
         f.write(contents)
     
     base_url = str(request.base_url).rstrip("/")
+    if "onrender.com" in base_url and base_url.startswith("http://"):
+        base_url = base_url.replace("http://", "https://")
+    
     image_url = f"{base_url}/static/uploads/{unique_filename}"
     return {"url": image_url, "filename": unique_filename}
 
