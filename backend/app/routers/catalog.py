@@ -126,6 +126,7 @@ def create_product(
 ):
     # Check duplicate SKU
     existing = db.query(models.Product).filter(
+        models.Product.organization_id == org.id,
         models.Product.sku == product_in.sku
     ).first()
     if existing:
@@ -138,6 +139,7 @@ def create_product(
     cat_id = None
     if product_in.category_name:
         category = db.query(models.Category).filter(
+            models.Category.organization_id == org.id,
             models.Category.name.ilike(product_in.category_name)
         ).first()
         if not category:
@@ -181,6 +183,7 @@ def update_product(
     current_user: models.User = Depends(security.require_role("owner"))
 ):
     product = db.query(models.Product).filter(
+        models.Product.organization_id == org.id,
         models.Product.id == id
     ).first()
     if not product:
@@ -193,6 +196,7 @@ def update_product(
         category_name = update_data.pop("category_name")
         if category_name:
             category = db.query(models.Category).filter(
+                models.Category.organization_id == org.id,
                 models.Category.name.ilike(category_name)
             ).first()
             if not category:
@@ -225,6 +229,7 @@ def delete_product(
     current_user: models.User = Depends(security.require_role("owner"))
 ):
     product = db.query(models.Product).filter(
+        models.Product.organization_id == org.id,
         models.Product.id == id
     ).first()
     if not product:

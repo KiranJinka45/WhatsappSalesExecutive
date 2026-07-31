@@ -133,16 +133,18 @@ def backfill_missing_image_embeddings(db_session_factory):
         ).all()
         
         if pending_products:
-            logger.info(f"Backfill: Found {len(pending_products)} products with pending image embeddings. Scheduling tasks...")
+            logger.info(f"Backfill: Found {len(pending_products)} products with pending image embeddings. Starting sequential backfill worker...")
             import threading
-            for prod in pending_products:
-                # Run embedding task in a background daemon thread
-                t = threading.Thread(
-                    target=generate_product_embedding_task,
-                    args=(db_session_factory, str(prod.id)),
-                    daemon=True
-                )
-                t.start()
+            
+            def sequential_backfill_worker():
+                for prod in pending_products:
+                    try:
+                        generate_product_embedding_task(db_session_factory, str(prod.id))
+                    except Exception as err:
+                        logger.error(f"Sequential backfill error for product {prod.id}: {err}")
+            
+            t = threading.Thread(target=sequential_backfill_worker, daemon=True)
+            t.start()
     except Exception as e:
         logger.error(f"Error during image embedding backfill scan: {e}")
     finally:
