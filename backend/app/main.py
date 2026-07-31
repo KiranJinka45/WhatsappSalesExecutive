@@ -210,6 +210,11 @@ app.include_router(webhooks.router)
 app.include_router(health.router)
 app.include_router(analytics.router)
 
+from fastapi.staticfiles import StaticFiles
+import os
+os.makedirs("static/uploads", exist_ok=True)
+app.mount("/static/uploads", StaticFiles(directory="static/uploads"), name="uploads")
+
 @app.get("/")
 def read_root():
     return {

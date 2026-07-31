@@ -41,6 +41,37 @@ async def upload_catalog(
             detail=f"Internal server error: {str(e)}"
         )
 
+import uuid
+import os
+from fastapi import Request
+
+@router.post("/upload-image", status_code=status.HTTP_201_CREATED)
+async def upload_catalog_image(
+    request: Request,
+    file: UploadFile = File(...),
+    org: models.Organization = Depends(security.get_current_org),
+    current_user: models.User = Depends(security.require_role("owner"))
+):
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File must be an image (JPEG, PNG, WebP, etc.)."
+        )
+    
+    ext = os.path.splitext(file.filename)[1] or ".jpg"
+    unique_filename = f"{org.id}_{uuid.uuid4().hex[:10]}{ext}"
+    upload_dir = "static/uploads"
+    os.makedirs(upload_dir, exist_ok=True)
+    file_path = os.path.join(upload_dir, unique_filename)
+    
+    contents = await file.read()
+    with open(file_path, "wb") as f:
+        f.write(contents)
+    
+    base_url = str(request.base_url).rstrip("/")
+    image_url = f"{base_url}/static/uploads/{unique_filename}"
+    return {"url": image_url, "filename": unique_filename}
+
 from sqlalchemy import or_
 
 @router.get("/products", response_model=List[schemas.ProductOut])

@@ -17,6 +17,7 @@ export default function Catalog({ token }) {
   const [stockCount, setStockCount] = useState('10');
   const [description, setDescription] = useState('');
   const [imageUrl, setImageUrl] = useState('');
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [file, setFile] = useState(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -286,8 +287,45 @@ export default function Catalog({ token }) {
             </div>
 
             <div style={styles.inputGroup}>
-              <label style={styles.label}>Image URL (comma separated for multiple)</label>
-              <input type="text" className="form-input" style={styles.compactInput} placeholder="https://example.com/image.jpg" value={imageUrl} onChange={e => setImageUrl(e.target.value)} />
+              <label style={styles.label}>Image File / URL</label>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <input 
+                  type="text" 
+                  className="form-input" 
+                  style={{ ...styles.compactInput, flex: 1 }} 
+                  placeholder="Paste URL or upload file..." 
+                  value={imageUrl} 
+                  onChange={e => setImageUrl(e.target.value)} 
+                />
+                <label className="btn btn-secondary" style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem', cursor: 'pointer', whiteSpace: 'nowrap', margin: 0 }}>
+                  {uploadingImage ? '⏳' : '📷 Upload'}
+                  <input 
+                    type="file" 
+                    accept="image/*" 
+                    style={{ display: 'none' }} 
+                    onChange={async (e) => {
+                      const imgFile = e.target.files[0];
+                      if (!imgFile) return;
+                      try {
+                        setUploadingImage(true);
+                        const formData = new FormData();
+                        formData.append('file', imgFile);
+                        const res = await apiFetch('/api/catalog/upload-image', {
+                          method: 'POST',
+                          body: formData
+                        });
+                        if (!res.ok) throw new Error('Image upload failed');
+                        const data = await res.json();
+                        setImageUrl(prev => prev ? `${prev}, ${data.url}` : data.url);
+                      } catch (err) {
+                        setError(err.message);
+                      } finally {
+                        setUploadingImage(false);
+                      }
+                    }} 
+                  />
+                </label>
+              </div>
             </div>
 
             <div style={styles.inputGroup}>
@@ -329,6 +367,7 @@ export default function Catalog({ token }) {
           <table style={styles.table}>
             <thead>
               <tr style={styles.thRow}>
+                <th style={{ ...styles.th, whiteSpace: 'nowrap' }}>Image</th>
                 <th style={{ ...styles.th, whiteSpace: 'nowrap' }}>SKU</th>
                 <th style={styles.th}>Name</th>
                 <th style={{ ...styles.th, whiteSpace: 'nowrap' }}>Price</th>
@@ -347,6 +386,19 @@ export default function Catalog({ token }) {
               ) : (
                 products.map((prod) => (
                   <tr key={prod.id} style={styles.trRow}>
+                    <td style={{ ...styles.td, textAlign: 'center' }}>
+                      {Array.isArray(prod.image_urls) && prod.image_urls.length > 0 ? (
+                        <a href={prod.image_urls[0]} target="_blank" rel="noopener noreferrer" title="Click to view full image">
+                          <img 
+                            src={prod.image_urls[0]} 
+                            alt={prod.name} 
+                            style={{ width: '36px', height: '36px', objectFit: 'cover', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer' }} 
+                          />
+                        </a>
+                      ) : (
+                        <span style={{ fontSize: '0.7rem', opacity: 0.5 }}>No Image</span>
+                      )}
+                    </td>
                     <td style={{ ...styles.td, whiteSpace: 'nowrap', fontSize: '0.8rem' }}>{prod.sku}</td>
                     <td style={styles.td}><strong>{prod.name}</strong></td>
                     <td style={{ ...styles.td, whiteSpace: 'nowrap' }}>₹{prod.price}</td>
