@@ -80,7 +80,7 @@ def generate_product_embedding_task(db_session_factory, product_id: str):
                 try:
                     import httpx
                     logger.info(f"Downloading catalog image for embedding: {first_img_url}")
-                    img_resp = httpx.get(first_img_url, timeout=20.0)
+                    img_resp = httpx.get(first_img_url, timeout=20.0, verify=False, follow_redirects=True)
                     if img_resp.status_code == 200:
                         img_bytes = img_resp.content
                         from .ai_service import get_image_embedding
