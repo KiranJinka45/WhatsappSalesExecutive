@@ -21,6 +21,9 @@ def get_token(request: Request) -> str:
     
     token = request.cookies.get("access_token")
     if not token:
+        token = request.query_params.get("token")
+
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",

@@ -54,7 +54,8 @@ export default function Conversations({ token, brandPhone }) {
     // 2. Real-time SSE Connection
     let eventSource = null;
     const connectSSE = () => {
-      const url = `${API_BASE_URL || ''}/api/conversations/stream`;
+      const authToken = token || localStorage.getItem('closely_token');
+      const url = `${API_BASE_URL || ''}/api/conversations/stream${authToken ? `?token=${encodeURIComponent(authToken)}` : ''}`;
       eventSource = new EventSource(url, { withCredentials: true });
 
       eventSource.onmessage = (event) => {
