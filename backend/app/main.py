@@ -61,9 +61,19 @@ async def lifespan(app: FastAPI):
             conn.execute(text("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS policies JSONB DEFAULT '{}';"))
             conn.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS image_embedding vector(3072);"))
             conn.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS image_embedding_status VARCHAR(50) DEFAULT 'pending';"))
+            
+            # Optimized indexes for multi-tenant query routing and joins
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_users_org_id ON users(organization_id);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_categories_org_id ON categories(organization_id);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_customer_memories_org_phone ON customer_memories(organization_id, customer_phone);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_orders_org_phone ON orders(organization_id, customer_phone);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_approval_requests_org_id ON approval_requests(organization_id);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_notifications_org_status ON notifications(organization_id, status);"))
+            
             conn.commit()
     except Exception as e:
-        print(f"Altering database tables failed: {e}. If using SQLite or tables already have columns, this is normal.")
+        print(f"Altering database tables or creating indexes failed: {e}. If using SQLite, this is normal.")
 
     # Start Redis Worker in a daemon background thread for queue processing
     worker_instance = None
