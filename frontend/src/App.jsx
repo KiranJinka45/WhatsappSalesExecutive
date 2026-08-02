@@ -1,14 +1,24 @@
-import React, { useState, useEffect } from 'react';
-import Landing from './components/Landing';
-import Auth from './components/Auth';
-import Onboarding from './components/Onboarding';
-import Conversations from './components/Conversations';
-import Catalog from './components/Catalog';
-import Settings from './components/Settings';
-import Analytics from './components/Analytics';
-import Integrations from './components/Integrations';
-import PublicCatalog from './components/PublicCatalog';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { apiFetch } from './api';
+
+// Lazily load components to minimize initial JS bundle size and speed up page load (Vite automatic code-splitting)
+const Landing = lazy(() => import('./components/Landing'));
+const Auth = lazy(() => import('./components/Auth'));
+const Onboarding = lazy(() => import('./components/Onboarding'));
+const Conversations = lazy(() => import('./components/Conversations'));
+const Catalog = lazy(() => import('./components/Catalog'));
+const Settings = lazy(() => import('./components/Settings'));
+const Analytics = lazy(() => import('./components/Analytics'));
+const Integrations = lazy(() => import('./components/Integrations'));
+const PublicCatalog = lazy(() => import('./components/PublicCatalog'));
+
+// Shimmer Loader for lazy loaded sections
+const LazyShimmer = () => (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '2rem', width: '100%', height: '100%', minHeight: '300px' }}>
+    <div style={{ height: '40px', width: '40%', background: 'rgba(255, 255, 255, 0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite ease-in-out' }} />
+    <div style={{ height: '200px', width: '100%', background: 'rgba(255, 255, 255, 0.03)', borderRadius: '8px', animation: 'pulse 1.5s infinite ease-in-out' }} />
+  </div>
+);
 
 export default function App() {
   const [token, setToken] = useState(null);
@@ -83,7 +93,11 @@ export default function App() {
   };
 
   if (isPublicCatalog) {
-    return <PublicCatalog tenantSlug={tenantSlug} />;
+    return (
+      <Suspense fallback={<div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: 'var(--bg-primary)' }}><div className="spinner"></div></div>}>
+        <PublicCatalog tenantSlug={tenantSlug} />
+      </Suspense>
+    );
   }
 
   if (checkingAuth) {
@@ -97,26 +111,34 @@ export default function App() {
 
   if (!isAuthenticated) {
     if (publicView === 'landing') {
-      return <Landing onNavigate={(view) => setPublicView(view)} />;
+      return (
+        <Suspense fallback={<div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: 'var(--bg-primary)' }}><div className="spinner"></div></div>}>
+          <Landing onNavigate={(view) => setPublicView(view)} />
+        </Suspense>
+      );
     }
     return (
-      <Auth 
-        initialMode={publicView} 
-        onLoginSuccess={checkAuth}
-        onBackToLanding={() => setPublicView('landing')}
-      />
+      <Suspense fallback={<div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: 'var(--bg-primary)' }}><div className="spinner"></div></div>}>
+        <Auth 
+          initialMode={publicView} 
+          onLoginSuccess={checkAuth}
+          onBackToLanding={() => setPublicView('landing')}
+        />
+      </Suspense>
     );
   }
 
   // Authenticated but not onboarded yet
   if (!brandPhone) {
     return (
-      <Onboarding 
-        initialBrandName={brandName}
-        onOnboardingComplete={(whatsappNum) => {
-          setBrandPhone(whatsappNum);
-        }}
-      />
+      <Suspense fallback={<div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: 'var(--bg-primary)' }}><div className="spinner"></div></div>}>
+        <Onboarding 
+          initialBrandName={brandName}
+          onOnboardingComplete={(whatsappNum) => {
+            setBrandPhone(whatsappNum);
+          }}
+        />
+      </Suspense>
     );
   }
 
@@ -175,13 +197,15 @@ export default function App() {
         </button>
       </header>
 
-      {/* Dynamic Tab Body Render */}
+      {/* Dynamic Tab Body Render with Lazy Loading & Suspense Shimmer Fallback */}
       <main style={styles.mainContent}>
-        {activeTab === 'inbox' && <Conversations token={token} brandPhone={brandPhone} />}
-        {activeTab === 'catalog' && <Catalog token={token} />}
-        {activeTab === 'settings' && <Settings token={token} />}
-        {activeTab === 'analytics' && <Analytics token={token} />}
-        {activeTab === 'integrations' && <Integrations />}
+        <Suspense fallback={<LazyShimmer />}>
+          {activeTab === 'inbox' && <Conversations token={token} brandPhone={brandPhone} />}
+          {activeTab === 'catalog' && <Catalog token={token} />}
+          {activeTab === 'settings' && <Settings token={token} />}
+          {activeTab === 'analytics' && <Analytics token={token} />}
+          {activeTab === 'integrations' && <Integrations />}
+        </Suspense>
       </main>
     </div>
   );
