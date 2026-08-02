@@ -39,57 +39,76 @@ export default function Conversations({ token, brandPhone }) {
     }
   }, [selectedConvId]);
 
+  const reconnectTimeoutRef = useRef(null);
+
   useEffect(() => {
     fetchPendingApprovals();
 
-    // 1. Polling fallback every 4 seconds (handles SSE network drops)
+    // 1. Polling fallback every 6 seconds (handles background sync)
     const pollInterval = setInterval(() => {
       fetchConversations();
       const currentSelectedId = selectedConvIdRef.current;
       if (currentSelectedId) {
         fetchChatDetail(currentSelectedId);
       }
-    }, 4000);
+    }, 6000);
 
     // 2. Real-time SSE Connection
     let eventSource = null;
     const connectSSE = () => {
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
       const authToken = token || localStorage.getItem('closely_token');
       const url = `${API_BASE_URL || ''}/api/conversations/stream${authToken ? `?token=${encodeURIComponent(authToken)}` : ''}`;
-      eventSource = new EventSource(url, { withCredentials: true });
+      
+      try {
+        eventSource = new EventSource(url, { withCredentials: true });
 
-      eventSource.onmessage = (event) => {
-        try {
-          const payload = JSON.parse(event.data);
-          const { event: eventType, data } = payload;
-          fetchConversations();
+        eventSource.onmessage = (event) => {
+          try {
+            const payload = JSON.parse(event.data);
+            const { event: eventType, data } = payload;
+            fetchConversations();
 
-          if (eventType === 'new_approval' || eventType === 'status_change') {
-            fetchPendingApprovals();
+            if (eventType === 'new_approval' || eventType === 'status_change') {
+              fetchPendingApprovals();
+            }
+
+            const currentSelectedId = selectedConvIdRef.current;
+            if (data && data.conversation_id && currentSelectedId === data.conversation_id) {
+              fetchChatDetail(currentSelectedId);
+            }
+          } catch (err) {
+            console.error("Error parsing SSE event data:", err);
           }
+        };
 
-          const currentSelectedId = selectedConvIdRef.current;
-          if (data && data.conversation_id && currentSelectedId === data.conversation_id) {
-            fetchChatDetail(currentSelectedId);
+        eventSource.onerror = (err) => {
+          if (eventSource) {
+            eventSource.close();
+            eventSource = null;
           }
-        } catch (err) {
-          console.error("Error parsing SSE event data:", err);
-        }
-      };
-
-      eventSource.onerror = (err) => {
-        console.error("SSE Connection error, retrying...", err);
-        if (eventSource) {
-          eventSource.close();
-        }
-        setTimeout(connectSSE, 5000);
-      };
+          if (!reconnectTimeoutRef.current) {
+            reconnectTimeoutRef.current = setTimeout(() => {
+              reconnectTimeoutRef.current = null;
+              connectSSE();
+            }, 5000);
+          }
+        };
+      } catch (err) {
+        console.error("Error initializing SSE:", err);
+      }
     };
 
     connectSSE();
 
     return () => {
       clearInterval(pollInterval);
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
       if (eventSource) {
         eventSource.close();
       }

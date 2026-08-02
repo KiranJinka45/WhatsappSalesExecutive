@@ -6,10 +6,14 @@ from .config import settings
 
 logger = logging.getLogger(__name__)
 
-# Create engine (psycopg2-binary will be used)
+# Create engine with optimized connection pooling for high concurrency
 engine = create_engine(
     settings.DATABASE_URL,
-    pool_pre_ping=True
+    pool_pre_ping=True,
+    pool_size=20,
+    max_overflow=10,
+    pool_recycle=1800,
+    pool_timeout=30
 )
 
 SessionLocal = sessionmaker(

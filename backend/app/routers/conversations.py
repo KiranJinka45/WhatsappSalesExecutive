@@ -32,8 +32,10 @@ async def stream_conversations(
                     # Send a keepalive ping comment to keep connection active
                     yield ": ping\n\n"
         except asyncio.CancelledError:
-            manager.disconnect(str(org.id), queue)
-        except Exception:
+            logger.debug(f"SSE client disconnected for Org: {org.id}")
+        except Exception as e:
+            logger.warning(f"SSE stream error for Org {org.id}: {e}")
+        finally:
             manager.disconnect(str(org.id), queue)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
