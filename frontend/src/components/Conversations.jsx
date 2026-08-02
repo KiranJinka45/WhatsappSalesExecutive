@@ -1,6 +1,29 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { apiFetch, API_BASE_URL } from '../api';
 
+// Helper to parse plain text and render URLs as clickable anchor links
+const renderMessageContent = (text) => {
+  if (!text) return "";
+  const urlRegex = /(https?:\/\/[^\s\)]+)/g;
+  const parts = text.split(urlRegex);
+  return parts.map((part, index) => {
+    if (part.match(urlRegex)) {
+      return (
+        <a
+          key={index}
+          href={part}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ color: '#6366f1', textDecoration: 'underline', fontWeight: '500', wordBreak: 'break-all' }}
+        >
+          {part}
+        </a>
+      );
+    }
+    return part;
+  });
+};
+
 export default function Conversations({ token, brandPhone }) {
   const [conversations, setConversations] = useState([]);
   const [selectedConvId, setSelectedConvId] = useState(null);
@@ -494,7 +517,7 @@ export default function Conversations({ token, brandPhone }) {
                         <div style={styles.msgSenderBadge}>
                           {msg.sender.toUpperCase()}
                         </div>
-                        <p style={styles.msgContent}>{msg.content}</p>
+                        <p style={styles.msgContent}>{renderMessageContent(msg.content)}</p>
                         {isAI && msg.metadata && (
                           <button
                             type="button"
