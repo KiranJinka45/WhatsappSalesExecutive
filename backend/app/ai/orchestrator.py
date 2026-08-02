@@ -27,7 +27,9 @@ def _mock_reply_fallback(customer_msg: str, catalog_context: List[Dict[str, Any]
     # 3. Product Discovery / Inquiry
     elif catalog_context:
         item = catalog_context[0]
-        return f"{greeting_prefix}We have the {item.get('name')} for ₹{int(float(item.get('price', 0)))}. Would you like to see pictures?"
+        img_url = item.get('image_urls')[0] if item.get('image_urls') and len(item.get('image_urls')) > 0 else ""
+        img_suffix = f"\n\nView: {img_url}" if img_url else ""
+        return f"{greeting_prefix}We have the {item.get('name')} for ₹{int(float(item.get('price', 0)))}.{img_suffix}"
         
     else:
         return f"{greeting_prefix}We have a gorgeous collection of silk sarees. What color or budget range are you looking for?"
@@ -104,6 +106,9 @@ CRITICAL FORMAT & LENGTH RULES:
 3. NO HALLUCINATION: Only state prices, colors, fabrics, and availability listed in CATALOG CONTEXT below. If not found, say cleanly: "We don't have that exact option right now, but I can check with our team for you!"
 4. PRICING: State prices as ₹ in natural sentences. Never mention SKU numbers or internal database IDs.
 5. NATURAL HUMAN CHATTING: Write like a real, friendly human store assistant texting on WhatsApp.
+6. PRODUCT IMAGES: When recommending, showing, or mentioning products from the CATALOG CONTEXT, you MUST include the exact corresponding Image URL provided in the CATALOG CONTEXT next to the product name. For example:
+- "Peach Chiffon Saree: ₹5499. View: https://example.com/peach.jpg"
+Never ignore or omit the Image URL. Output it exactly as listed in the CATALOG CONTEXT.
 {lang_instruction}
 
 POLICIES CONTEXT:
