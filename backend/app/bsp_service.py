@@ -179,3 +179,91 @@ def download_meta_media(media_id: str, org: models.Organization) -> bytes:
         logger.error(f"Error downloading media {media_id}: {e}", exc_info=True)
         raise
 
+def request_pairing_code(phone_number: str, org: models.Organization) -> Dict[str, Any]:
+    """
+    Requests a 6/8-character WhatsApp Web pairing code (OTP) from the configured
+    Evolution API / WasenderAPI gateway for instant connection.
+    """
+    policies = org.policies or {}
+    wasender_token = policies.get("wasender_api_token") or getattr(settings, "WASENDER_API_TOKEN", None)
+    wasender_session = policies.get("wasender_session_id") or getattr(settings, "WASENDER_SESSION_ID", None) or "kiran"
+    
+    if not wasender_token:
+        logger.error("WasenderAPI token is not configured.")
+        return {"status": "failed", "error": "WhatsApp Gateway API Token (WASENDER_API_TOKEN) is not configured."}
+
+    # Clean phone number format
+    clean_phone = "".join([c for c in phone_number if c.isdigit()])
+    
+    # Evolution API / WasenderAPI pairing code endpoint
+    base_url = settings.WASENDER_API_BASE_URL.rstrip('/')
+    url = f"{base_url}/instance/connection/pairingCode/{wasender_session}"
+    
+    headers = {
+        "apikey": wasender_token,
+        "Authorization": f"Bearer {wasender_token}",
+        "Content-Type": "application/json"
+    }
+    
+    params = {
+        "number": clean_phone,
+        "precomposed": "false"
+    }
+
+    try:
+        # First, ensure instance is created / connected
+        create_url = f"{base_url}/instance/create"
+        create_payload = {"instanceName": wasender_session, "token": wasender_token, "qrcode": False}
+        httpx.post(create_url, json=create_payload, headers=headers, timeout=10.0)
+
+        # Retrieve pairing code
+        logger.info(f"Requesting pairing code for session {wasender_session} and phone {clean_phone} via {url}")
+        response = httpx.get(url, headers=headers, params=params, timeout=15.0)
+        
+        if response.status_code == 200:
+            res_data = response.json()
+            code = res_data.get("code") or res_data.get("pairingCode")
+            if code:
+                logger.info(f"Pairing code retrieved successfully: {code}")
+                return {"status": "success", "code": code}
+            else:
+                logger.error(f"Pairing code response did not contain 'code': {res_data}")
+                return {"status": "failed", "error": f"Failed to retrieve pairing code from gateway response: {res_data}"}
+        else:
+            logger.error(f"WhatsApp Gateway pairing code request failed: {response.status_code} - {response.text}")
+            return {"status": "failed", "error": f"Gateway failed with status {response.status_code}: {response.text}"}
+    except Exception as e:
+        logger.error(f"Exception requesting pairing code: {e}", exc_info=True)
+        return {"status": "failed", "error": str(e)}
+
+def check_connection_status(org: models.Organization) -> Dict[str, Any]:
+    """
+    Checks the current session connection status (connected, disconnected, pairing, etc.).
+    """
+    policies = org.policies or {}
+    wasender_token = policies.get("wasender_api_token") or getattr(settings, "WASENDER_API_TOKEN", None)
+    wasender_session = policies.get("wasender_session_id") or getattr(settings, "WASENDER_SESSION_ID", None) or "kiran"
+    
+    if not wasender_token:
+        return {"status": "disconnected", "reason": "No gateway configured."}
+        
+    base_url = settings.WASENDER_API_BASE_URL.rstrip('/')
+    url = f"{base_url}/instance/connectionState/{wasender_session}"
+    
+    headers = {
+        "apikey": wasender_token,
+        "Authorization": f"Bearer {wasender_token}"
+    }
+    
+    try:
+        response = httpx.get(url, headers=headers, timeout=10.0)
+        if response.status_code == 200:
+            res_data = response.json()
+            # Evolution API returns e.g. {"instance": {"state": "open"}} or {"state": "open"}
+            state = res_data.get("state") or res_data.get("instance", {}).get("state", "unknown")
+            return {"status": "success", "state": state}
+        else:
+            return {"status": "failed", "error": response.text}
+    except Exception as e:
+        return {"status": "failed", "error": str(e)}
+

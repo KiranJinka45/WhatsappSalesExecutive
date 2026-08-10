@@ -18,8 +18,15 @@ export default function Settings({ token }) {
   const [testStatus, setTestStatus] = useState('');
   const [testing, setTesting] = useState(false);
 
+  const [pairingPhone, setPairingPhone] = useState('');
+  const [pairingCode, setPairingCode] = useState('');
+  const [pairingLoading, setPairingLoading] = useState(false);
+  const [pairingError, setPairingError] = useState('');
+  const [connectionState, setConnectionState] = useState('');
+
   useEffect(() => {
     fetchProfile();
+    fetchConnectionStatus();
   }, []);
 
   const fetchProfile = async () => {
@@ -29,6 +36,7 @@ export default function Settings({ token }) {
         const data = await res.json();
         setName(data.name);
         setWhatsappNumber(data.whatsapp_number || '');
+        setPairingPhone(data.whatsapp_number || '');
         setAddress(data.address || '');
         setShippingPolicy(data.policies?.shipping || '');
         setReturnPolicy(data.policies?.returns || '');
@@ -39,6 +47,43 @@ export default function Settings({ token }) {
       }
     } catch (err) {
       console.error("Error fetching brand profile:", err);
+    }
+  };
+
+  const fetchConnectionStatus = async () => {
+    try {
+      const res = await apiFetch('/api/brand/whatsapp/connection-status');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status === 'success') {
+          setConnectionState(data.state);
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching connection status:", err);
+    }
+  };
+
+  const handleRequestPairingCode = async () => {
+    setPairingError('');
+    setPairingCode('');
+    setPairingLoading(true);
+    try {
+      const res = await apiFetch('/api/brand/whatsapp/request-pairing-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone_number: pairingPhone })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setPairingCode(data.code);
+      } else {
+        setPairingError(data.detail || 'Failed to request pairing code.');
+      }
+    } catch (err) {
+      setPairingError(err.message);
+    } finally {
+      setPairingLoading(false);
     }
   };
 
@@ -190,6 +235,86 @@ export default function Settings({ token }) {
               {testing ? 'Testing...' : '🧪 Test Meta Connection'}
             </button>
             {testStatus && <span style={{ fontSize: '0.8rem' }}>{testStatus}</span>}
+          </div>
+
+          <div style={styles.sectionTitle}>1B. Unofficial WhatsApp Web Gateway (One-Click Link via OTP)</div>
+          
+          <div style={{ background: 'rgba(255, 255, 255, 0.01)', border: '1px dashed var(--glass-border)', borderRadius: '8px', padding: '1.2rem', marginBottom: '0.5rem' }}>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0 }}>
+              Connect your shop's WhatsApp immediately by requesting an 8-character pairing code (OTP) and typing it directly in the WhatsApp mobile app.
+            </p>
+
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', marginTop: '1rem' }}>
+              <div style={{ ...styles.inputGroup, flex: '2 1 300px' }}>
+                <label style={styles.label}>WhatsApp Phone Number to Link</label>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <input 
+                    type="text" 
+                    className="form-input" 
+                    placeholder="e.g. +917989888858" 
+                    value={pairingPhone} 
+                    onChange={e => setPairingPhone(e.target.value)} 
+                  />
+                  <button 
+                    type="button" 
+                    className="btn btn-primary" 
+                    onClick={handleRequestPairingCode}
+                    disabled={pairingLoading}
+                    style={{ whiteSpace: 'nowrap', fontSize: '0.8rem', padding: '0.4rem 1rem' }}
+                  >
+                    {pairingLoading ? 'Generating...' : '🔑 Request OTP'}
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ ...styles.inputGroup, flex: '1 1 180px' }}>
+                <label style={styles.label}>Connection Status</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.4rem' }}>
+                  <span style={{ 
+                    fontSize: '0.8rem', 
+                    padding: '0.3rem 0.6rem', 
+                    borderRadius: '4px',
+                    fontWeight: '600',
+                    backgroundColor: connectionState === 'open' ? 'rgba(76, 175, 80, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                    color: connectionState === 'open' ? '#4caf50' : '#888'
+                  }}>
+                    {connectionState === 'open' ? '🟢 Linked & Active' : '🔴 Unlinked'}
+                  </span>
+                  <button 
+                    type="button" 
+                    className="btn btn-secondary" 
+                    onClick={fetchConnectionStatus}
+                    style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}
+                  >
+                    🔄 Refresh
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {pairingCode && (
+              <div style={{ background: 'rgba(0, 255, 196, 0.08)', border: '1px solid rgba(0, 255, 196, 0.2)', borderRadius: '8px', padding: '1rem', marginTop: '1rem' }}>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textAlign: 'center', marginBottom: '0.3rem' }}>
+                  Your WhatsApp Web Pairing Code:
+                </div>
+                <div style={{ fontSize: '2rem', fontWeight: '800', letterSpacing: '4px', color: '#00ffc4', fontFamily: 'monospace', margin: '0.5rem 0', textAlign: 'center' }}>
+                  {pairingCode}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textAlign: 'left', lineHeight: '1.4' }}>
+                  <strong>How to connect:</strong><br />
+                  1. Open WhatsApp on the phone number <strong>{pairingPhone}</strong>.<br />
+                  2. Tap <strong>Settings</strong> or <strong>Menu (three dots)</strong> &gt; <strong>Linked Devices</strong>.<br />
+                  3. Tap <strong>Link a Device</strong>, then tap <strong>Link with phone number instead</strong> at the bottom.<br />
+                  4. Enter the 8-character pairing code shown above. Once linked, click the <strong>Refresh</strong> button to update the status!
+                </div>
+              </div>
+            )}
+
+            {pairingError && (
+              <div style={{ color: '#f44336', fontSize: '0.8rem', marginTop: '0.5rem' }}>
+                ⚠️ {pairingError}
+              </div>
+            )}
           </div>
 
           <div style={styles.sectionTitle}>2. Brand Profile Details</div>

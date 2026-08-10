@@ -296,3 +296,6 @@ class NotificationOut(NotificationBase):
     read_at: Optional[datetime] = None
     
     model_config = ConfigDict(from_attributes=True)
+
+class WhatsAppRequestPairing(BaseModel):
+    phone_number: str

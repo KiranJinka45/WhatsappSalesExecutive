@@ -194,3 +194,28 @@ def delete_brand_profile(
         )
     db.commit()
     return None
+
+@router.post("/whatsapp/request-pairing-code")
+def request_whatsapp_pairing_code(
+    payload: schemas.WhatsAppRequestPairing,
+    org: models.Organization = Depends(security.get_current_org),
+    current_user: models.User = Depends(security.require_role("owner"))
+):
+    from ..bsp_service import request_pairing_code
+    res = request_pairing_code(payload.phone_number, org)
+    if res.get("status") == "success":
+        return {"code": res["code"]}
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=res.get("error", "Failed to request pairing code.")
+        )
+
+@router.get("/whatsapp/connection-status")
+def get_whatsapp_connection_status(
+    org: models.Organization = Depends(security.get_current_org),
+    current_user: models.User = Depends(security.require_role("owner"))
+):
+    from ..bsp_service import check_connection_status
+    res = check_connection_status(org)
+    return res
