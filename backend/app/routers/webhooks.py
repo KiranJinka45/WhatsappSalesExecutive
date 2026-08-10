@@ -697,7 +697,8 @@ def process_message_async(
                 policies_context,
                 detected_language=detected_lang,
                 detected_script=detected_script,
-                customer_name=conv.customer_name or "Customer"
+                customer_name=conv.customer_name or "Customer",
+                brand_name=org.name
             )
 
             # Run the deterministic Decision Engine to check safety policies & rules

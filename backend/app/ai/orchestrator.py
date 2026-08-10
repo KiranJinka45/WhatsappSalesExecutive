@@ -30,7 +30,6 @@ def _mock_reply_fallback(customer_msg: str, catalog_context: List[Dict[str, Any]
         img_url = item.get('image_urls')[0] if item.get('image_urls') and len(item.get('image_urls')) > 0 else ""
         img_suffix = f"\n\nView: {img_url}" if img_url else ""
         return f"{greeting_prefix}We have the {item.get('name')} for ₹{int(float(item.get('price', 0)))}.{img_suffix}"
-        
     else:
         return f"{greeting_prefix}We have a gorgeous collection of silk sarees. What color or budget range are you looking for?"
 
@@ -42,6 +41,7 @@ def generate_reply(
     detected_language: Optional[str] = None,
     detected_script: Optional[str] = None,
     customer_name: str = "Customer",
+    brand_name: str = "Pushpalatha Silks",
     **kwargs
 ) -> str:
     """
@@ -60,12 +60,12 @@ def generate_reply(
     is_first_message = len(previous_ai_msgs) == 0
 
     if is_first_message:
-        greeting_instruction = f"GREETING RULE: This is the VERY FIRST message in the conversation. Warmly greet the customer by name if known (e.g. 'Namaste {customer_name}! 🙏 Welcome to Pushpalatha Silks!')."
+        greeting_instruction = f"GREETING RULE: This is the VERY FIRST message in the conversation. Warmly greet the customer by name if known (e.g. 'Namaste {customer_name}! 🙏 Welcome to {brand_name}!')."
     else:
         greeting_instruction = f"STRICT NO-RE-GREETING RULE: This is an ONGOING conversation (message count > 1). Do NOT greet the customer. Do NOT say 'Hi', 'Hello', 'Namaste', 'Hi {customer_name}', 'Naa {customer_name}', or repeat any greetings. Jump directly into answering their query."
 
     # Format catalog context
-    catalog_str = "For general inquiries or greetings, introduce Pushpalatha Silks boutique collection of silk sarees (Banarasi, Kanjeevaram, Pattu, Cotton)."
+    catalog_str = f"For general inquiries or greetings, introduce {brand_name} boutique collection of silk sarees (Banarasi, Kanjeevaram, Pattu, Cotton)."
     if catalog_context:
         items = []
         for item in catalog_context[:3]:  # Limit to top 3 items to keep LLM context concise
@@ -89,16 +89,16 @@ def generate_reply(
 7. LANGUAGE & SCRIPT RULE:
 - The customer's message has been detected as language: "{detected_language}" and script: "{detected_script}".
 - You MUST generate your response matching this exact language and script combination.
-- If the language is "te" (Telugu) and script is "latin", reply in Romanized Telugu (Telugu written in the Latin alphabet, e.g. "ee saree price Rs. 4500 andi...").
-- If the language is "hi" (Hindi) and script is "latin", reply in Romanized Hindi/Hinglish (e.g. "is saree ki price Rs. 4500 hai...").
-- If the language is "kn" (Kannada) and script is "latin", reply in Romanized Kannada.
-- If the language is "ta" (Tamil) and script is "latin", reply in Romanized Tamil.
+- SCRIPT CONSISTENCY: Do NOT mix native script and Latin/English script in the same reply. If the script is "latin", the entire response (including lists, product names, and descriptions) must use ONLY English letters (Latin alphabet). Never output native Unicode characters (such as Telugu/Devanagari script) in a "latin" script response.
+- If the language is "te" (Telugu) and script is "latin", reply in natural, clear, and simple Romanized Telugu (e.g. "Namaste andi! Maa daggara cotton sarees levu. Kani silk sarees vunnayi, chusthara?").
+- If the language is "hi" (Hindi) and script is "latin", reply in Romanized Hindi/Hinglish (e.g. "Namaste! Hamare paas cotton sarees abhi nahi hain, par silk sarees hain. Kya aap dekhna chahenge?").
 - If the script is "native", reply strictly in native regional Unicode characters.
 - If English, reply in plain English.
-- CRITICAL TELUGU QUALITY RULE: When writing in Telugu (native or Romanized), use NATURAL Telugu words — NOT phonetic transliterations of English. For example: use "వస్త్రం" or "చీర" for product/saree, NOT "ప్రాజెక్ట్" (project). Use "ధర" for price, "రంగు" for color, "అందుబాటులో ఉంది" for available. Keep product names (e.g. "Royal Banarasi Silk Saree") in English as-is since they are brand names.
+- CRITICAL PRODUCT NAME RULE: Always keep product names (like "Royal Banarasi Silk Saree" or "Peach Chiffon Saree") exactly in English as-is (in Latin script). Do not translate them into regional names (e.g. do not translate "Royal" to "Raju").
+- CRITICAL TELUGU QUALITY RULE: When writing in Telugu, use simple, friendly, and natural phrasing. For example: use "saree" or "cheera" for saree, "dhara" or "price" for price, "color" or "rangu" for color, "vundi" or "vunnayi" for available. Keep sentences short and conversational.
 """
 
-    system_instruction = f"""You are "Closely", an expert AI sales assistant for Pushpalatha Silks boutique on WhatsApp.
+    system_instruction = f"""You are "Closely", an expert AI sales assistant for {brand_name} boutique on WhatsApp. on WhatsApp.
 
 CRITICAL FORMAT & LENGTH RULES:
 1. SHORT & SIMPLE: Keep your response short, concise, and directly relevant (maximum 1 to 3 short sentences). Never send long paragraphs or walls of text.
