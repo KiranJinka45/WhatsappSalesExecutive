@@ -3,6 +3,7 @@ import sys
 import unittest
 import uuid
 import json
+from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 # Import shared test infrastructure from conftest
@@ -69,13 +70,16 @@ class TestSprint2Gates(unittest.TestCase):
         response = self.client.get("/api/health/liveness", headers={"X-Request-ID": custom_id})
         self.assertEqual(response.headers["X-Request-ID"], custom_id)
 
-    def test_payment_webhook_flow(self):
+    @patch("app.bsp_service.send_whatsapp_message")
+    def test_payment_webhook_flow(self, mock_send):
         """
-        Verify payments webhook sets funnel stage to paid and logs values.
+        Verify payments webhook sets funnel stage to paid, logs values,
+        and dispatches a confirmation message.
         """
         # 1. Manually insert active conversation under our brand
         db = TestingSessionLocal()
         org = db.query(models.Organization).first()
+        target_org_id = org.id
         conv = models.Conversation(
             organization_id=org.id,
             customer_phone="+919988776655",
@@ -101,12 +105,29 @@ class TestSprint2Gates(unittest.TestCase):
 
         # 3. Assert DB updates
         db = TestingSessionLocal()
+        db.is_admin = True
         updated_conv = db.query(models.Conversation).filter(
             models.Conversation.customer_phone == "+919988776655"
         ).first()
         self.assertEqual(updated_conv.metadata_["funnel_stage"], "paid")
         self.assertEqual(updated_conv.metadata_["order_value"], 3500.50)
+
+        # 4. Assert message was saved in DB
+        messages = db.query(models.Message).filter(
+            models.Message.conversation_id == conv.id
+        ).all()
+        # Ensure there is a message from AI acknowledging payment
+        ai_msgs = [m for m in messages if m.sender == "ai" and "payment of Rs. 3500.50" in m.content]
+        self.assertEqual(len(ai_msgs), 1)
         db.close()
+
+        # 5. Assert send_whatsapp_message was invoked asynchronously
+        mock_send.assert_called_once()
+        args, kwargs = mock_send.call_args
+        self.assertEqual(args[0], "+919988776655")
+        self.assertIn("payment of Rs. 3500.50", args[1])
+        import sqlalchemy
+        self.assertEqual(str(sqlalchemy.inspect(args[2]).identity[0]), str(target_org_id))
 
     def test_jwt_tampering_and_expired_rejections(self):
         """

@@ -590,10 +590,23 @@ def process_message_async(
                 logger.info(f"Extracted entities for conversation {conv_id}: {entities}")
                 
                 # Build search string (hybrid search logic: combine text with entities)
-                search_query = message_text
-                if entities.get("product_type"):
-                    search_query += f" {entities['product_type']}"
+                search_components = []
+                # Exclude short affirmative/negative words from cluttering semantic meaning
+                msg_lower = message_text.lower().strip()
+                if msg_lower not in ["yes", "yep", "yeah", "no", "nope", "ok", "okay", "sure", "please"]:
+                    search_components.append(message_text)
                     
+                # Incorporate all relevant extracted entities for rich semantic meaning
+                for entity_key in ["product_type", "color", "fabric", "gender"]:
+                    val = entities.get(entity_key)
+                    if val and val.lower() != "unknown":
+                        search_components.append(val)
+                        
+                search_query = " ".join(search_components).strip()
+                if not search_query:
+                    search_query = message_text  # Fallback
+                    
+                logger.info(f"Refined search query for {conv_id}: '{search_query}'")
                 query_embedding = ai_service.get_embedding(search_query)
                 
                 # Check if embedding is zero vector (fallback to text matching if offline/missing API key)
@@ -1338,11 +1351,81 @@ class PaymentPayload(BaseModel):
     amount: float
     currency: str = "INR"
 
+def send_payment_confirmation_async(org_id: str, customer_phone: str, amount: float):
+    import uuid
+    org_uuid = uuid.UUID(org_id) if isinstance(org_id, str) else org_id
+    db = SessionLocal()
+    db.is_admin = True
+    db.organization_id = org_uuid
+    token = tenant_var.set(org_uuid)
+    try:
+        # Fetch organization globally
+        tenant_var.set(None)
+        db.organization_id = None
+        org = db.query(models.Organization).filter(models.Organization.id == org_uuid).first()
+        tenant_var.set(org_uuid)
+        db.organization_id = org_uuid
+        
+        if not org:
+            logger.error(f"Organization {org_uuid} not found for payment confirmation task.")
+            return
+
+        # Fetch conversation
+        conv = db.query(models.Conversation).filter(
+            models.Conversation.customer_phone == customer_phone
+        ).order_by(models.Conversation.updated_at.desc()).first()
+        
+        if not conv:
+            logger.error(f"Conversation not found for customer phone {customer_phone} in payment confirmation task.")
+            return
+
+        content = f"Namaste! We have received your payment of Rs. {amount:.2f}. Your order has been successfully placed. Thank you for shopping with us! 🙏"
+        
+        # Save message
+        ai_msg = models.Message(
+            conversation_id=conv.id,
+            sender="ai",
+            message_type="text",
+            content=content,
+            status="sent"
+        )
+        db.add(ai_msg)
+        db.commit()
+        db.refresh(ai_msg)
+        
+        # Broadcast message update to connected merchants
+        from ..connection_manager import manager
+        manager.broadcast(str(org_uuid), "new_message", {
+            "conversation_id": str(conv.id),
+            "message": {
+                "id": str(ai_msg.id),
+                "sender": ai_msg.sender,
+                "message_type": ai_msg.message_type,
+                "content": ai_msg.content,
+                "status": "sent",
+                "created_at": ai_msg.created_at.isoformat()
+            }
+        })
+        
+        # Send via BSP
+        from ..bsp_service import send_whatsapp_message
+        send_whatsapp_message(customer_phone, content, org)
+    except Exception as e:
+        logger.error(f"Failed to send payment confirmation asynchronously: {e}", exc_info=True)
+    finally:
+        db.close()
+        tenant_var.reset(token)
+
 @router.post("/payments", responses={404: {"description": "Conversation not found"}})
-def receive_payment_webhook(payload: PaymentPayload, db: Session = Depends(get_db)):
+def receive_payment_webhook(
+    payload: PaymentPayload,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
     """
     Simulates payment gateway webhook ingestion.
-    Updates conversation metadata funnel_stage to 'paid' and logs order_value.
+    Updates conversation metadata funnel_stage to 'paid', logs order_value,
+    and asynchronously dispatches a payment confirmation message via WhatsApp.
     """
     # Temporarily bypass tenant filtering to find conversation globally by customer phone
     token = tenant_var.set(None)
@@ -1373,6 +1456,22 @@ def receive_payment_webhook(payload: PaymentPayload, db: Session = Depends(get_d
             "funnel_stage": "paid",
             "order_value": payload.amount
         })
+        
+        # Enforce AI_ACTIVE status and trigger payment confirmation asynchronously
+        conv.status = "AI_ACTIVE"
+        db.commit()
+        manager.broadcast(org_id, "status_change", {
+            "conversation_id": str(conv.id),
+            "status": "AI_ACTIVE"
+        })
+        
+        background_tasks.add_task(
+            send_payment_confirmation_async,
+            org_id,
+            payload.customer_phone,
+            payload.amount
+        )
+        
         return {"status": "success", "conversation_id": str(conv.id)}
     finally:
         db.is_admin = False

@@ -123,15 +123,33 @@ class DecisionEngine:
                 rule_triggered="REFUND_POLICY",
             )
 
-        # ── 4. Discount request ──────────────────────────────────────────
-        if intent == "discount_request":
+        # ── 4. Discount inquiry ──────────────────────────────────────────
+        if intent == "discount_inquiry":
             discount_limit = _get_policy(policies, "discount_limit")
+            if discount_limit > 0:
+                return DecisionResult(
+                    action="send",
+                    reason=f"Discount inquiry handled autonomously (policy: discount_limit={discount_limit}%)",
+                    risk_score=15,
+                    ai_recommendation="approve",
+                    rule_triggered="DISCOUNT_POLICY",
+                )
             return DecisionResult(
                 action="wait_for_approval",
-                reason=f"Discount request detected – exceeds policy limit of {discount_limit}%",
+                reason=f"Discount inquiry detected – exceeds policy limit of {discount_limit}%",
                 risk_score=80,
                 ai_recommendation="reject",
                 rule_triggered="DISCOUNT_POLICY",
+            )
+
+        # ── 4b. Human negotiation ────────────────────────────────────────
+        if intent == "human_negotiation":
+            return DecisionResult(
+                action="wait_for_approval",
+                reason="Custom discount negotiation or bargaining detected – requires human intervention",
+                risk_score=85,
+                ai_recommendation="reject",
+                rule_triggered="HUMAN_NEGOTIATION",
             )
 
         # ── 5. Bulk order ────────────────────────────────────────────────

@@ -111,7 +111,7 @@ def generate_content(prompt: str, strategy: str = "fast") -> AIResponse:
     elif strategy == "fast":
         providers_to_try = ["groq", "gemini", "openai", "openrouter", "nvidia"]
     elif strategy == "smart":
-        providers_to_try = ["groq", "gemini", "openai", "openrouter", "nvidia"]
+        providers_to_try = ["gemini", "openai", "groq", "openrouter", "nvidia"]
     else:
         providers_to_try = ["groq", "gemini", "openai", "openrouter", "nvidia"]
 

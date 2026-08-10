@@ -165,12 +165,18 @@ async def security_nul_check_middleware(request: Request, call_next):
         response = await call_next(request)
         return response
     except Exception as exc:
+        if "NUL" in str(exc) or "null byte" in str(exc).lower():
+            resp = JSONResponse(status_code=400, content={"detail": "NUL characters are not allowed"})
+            return _add_cors_headers(resp, request)
         logger.error(f"Unhandled server exception in middleware: {exc}", exc_info=True)
         resp = JSONResponse(status_code=500, content={"detail": f"Internal server error: {str(exc)}"})
         return _add_cors_headers(resp, request)
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
+    if "NUL" in str(exc) or "null byte" in str(exc).lower():
+        resp = JSONResponse(status_code=400, content={"detail": "NUL characters are not allowed"})
+        return _add_cors_headers(resp, request)
     logger.error(f"Global unhandled exception: {exc}", exc_info=True)
     resp = JSONResponse(
         status_code=500,
@@ -184,7 +190,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     logger.error(f"Validation error: {exc}", exc_info=True)
     resp = JSONResponse(
         status_code=422,
-        content={"detail": "Invalid request payload", "errors": exc.errors()}
+        content={"detail": exc.errors()}
     )
     return _add_cors_headers(resp, request)
 

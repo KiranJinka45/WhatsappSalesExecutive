@@ -273,7 +273,7 @@ def delete_product(
     db.commit()
     return None
 
-@router.get("/public/products")
+@router.get("/public/products", responses={404: {"description": "Store not found"}})
 def get_public_products(
     tenant_slug: str = Query(..., description="Slugified name of the store"),
     category: Optional[str] = Query(None),

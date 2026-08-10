@@ -201,7 +201,7 @@ def parse_and_sync_catalog(
             normalized_header.append('price')
         elif col_clean in ['category_name', 'category name', 'category']:
             normalized_header.append('category')
-        elif col_clean in ['image urls', 'image_urls', 'images', 'image_url']:
+        elif col_clean in ['image urls', 'image_urls', 'images', 'image_url', 'image', 'image_link', 'image link', 'photo', 'photos', 'product_image', 'product image', 'link', 'url', 'urls']:
             normalized_header.append('image_urls')
         elif col_clean in ['video urls', 'video_urls', 'videos', 'video_url']:
             normalized_header.append('video_urls')

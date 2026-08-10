@@ -63,9 +63,20 @@ def initialize_db():
 
 def setup_test_db():
     """Create pgvector extension, all tables, and RLS policies."""
+    engine.dispose()
     with engine.connect() as conn:
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
         conn.commit()
+        try:
+            conn.execute(text("""
+                SELECT pg_terminate_backend(pid) 
+                FROM pg_stat_activity 
+                WHERE datname = current_database() AND pid <> pg_backend_pid();
+            """))
+            conn.commit()
+        except Exception:
+            pass
+    engine.dispose()
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     

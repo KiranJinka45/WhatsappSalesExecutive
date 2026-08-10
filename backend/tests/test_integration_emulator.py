@@ -95,67 +95,75 @@ def test_emulator_end_to_end_loop():
     Test standard success loop:
     Webhook Inbound -> Backend -> AI Orchestrator -> Emulator Outbound Received
     """
-    # Override mock generate_reply return value for this integration test
+    # Override mock generate_reply and decision_engine return values for this integration test
     from app import ai_service
+    from unittest.mock import patch, MagicMock
     ai_service.generate_reply.return_value = "Hello! Check out our Royal Silk Saree (SKU-SAR-999) for INR 2999."
+    mock_eval_res = MagicMock()
+    mock_eval_res.action = "send"
+    mock_eval_res.reason = "Mocked send for integration test"
+    mock_eval_res.risk_score = 0
+    mock_eval_res.ai_recommendation = "approve"
+    mock_eval_res.rule_triggered = "NONE"
 
-    client = TestClient(backend_app)
-    
-    # Seed a simple category and product for search
-    db = TestingSessionLocal()
-    org = db.query(models.Organization).first()
-    category = models.Category(organization_id=org.id, name="Sarees")
-    db.add(category)
-    db.commit()
-    db.refresh(category)
-    
-    product = models.Product(
-        organization_id=org.id,
-        category_id=category.id,
-        sku="SKU-SAR-999",
-        name="Royal Silk Saree",
-        price=2999.00,
-        color="Blue",
-        fabric="Silk",
-        stock_count=5,
-        sizes=["Free Size"],
-        embedding=[0.1] * 768,  # Dummy mock embedding vector
-        embedding_status="completed"
-    )
-    db.add(product)
-    db.commit()
-    db.close()
+    with patch.object(ai_service.decision_engine, "evaluate", return_value=mock_eval_res):
+        client = TestClient(backend_app)
+        
+        # Seed a simple category and product for search
+        db = TestingSessionLocal()
+        org = db.query(models.Organization).first()
+        category = models.Category(organization_id=org.id, name="Sarees")
+        db.add(category)
+        db.commit()
+        db.refresh(category)
+        
+        product = models.Product(
+            organization_id=org.id,
+            category_id=category.id,
+            sku="SKU-SAR-999",
+            name="Royal Silk Saree",
+            price=2999.00,
+            color="Blue",
+            fabric="Silk",
+            stock_count=5,
+            sizes=["Free Size"],
+            embedding=[0.1] * 768,  # Dummy mock embedding vector
+            embedding_status="completed"
+        )
+        db.add(product)
+        db.commit()
+        db.close()
 
-    # Send inbound webhook requesting sarees
-    webhook_payload = build_mock_webhook("919876543210", "Show sarees under 4000")
-    response = client.post("/api/webhooks/whatsapp", json=webhook_payload)
-    
-    assert response.status_code == 200
-    assert response.json() == {"status": "processing"}
-    
-    # Wait for the background execution task to complete (poll up to 6s)
-    messages = []
-    for _ in range(12):
-        time.sleep(0.5)
-        em_res = httpx.get("http://127.0.0.1:9000/api/emulator/messages")
-        if em_res.status_code == 200 and len(em_res.json()) > 0:
-            messages = em_res.json()
-            break
-            
-    assert len(messages) == 1
-    sent_msg = messages[0]
-    assert sent_msg["recipient"] == "919876543210"
-    assert "Royal Silk Saree" in sent_msg["content"]
-    assert "SKU-SAR-999" in sent_msg["content"]
+        # Send inbound webhook requesting sarees
+        webhook_payload = build_mock_webhook("919876543210", "Show sarees under 4000")
+        response = client.post("/api/webhooks/whatsapp", json=webhook_payload)
+        
+        assert response.status_code == 200
+        assert response.json() == {"status": "processing"}
+        
+        # Wait for the background execution task to complete (poll up to 6s)
+        messages = []
+        for _ in range(12):
+            time.sleep(0.5)
+            em_res = httpx.get("http://127.0.0.1:9000/api/emulator/messages")
+            if em_res.status_code == 200 and len(em_res.json()) > 0:
+                messages = em_res.json()
+                break
+                
+        assert len(messages) == 1
+        sent_msg = messages[0]
+        assert sent_msg["recipient"] == "919876543210"
+        assert "Royal Silk Saree" in sent_msg["content"]
+        assert "SKU-SAR-999" in sent_msg["content"]
 
-    # Save outbound payload as a golden artifact for visual and regression audits
-    import os
-    import json
-    goldens_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "goldens", "outbound"))
-    os.makedirs(goldens_dir, exist_ok=True)
-    golden_path = os.path.join(goldens_dir, "budget_search.json")
-    with open(golden_path, "w", encoding="utf-8") as f:
-        json.dump(sent_msg["payload"], f, indent=2)
+        # Save outbound payload as a golden artifact for visual and regression audits
+        import os
+        import json
+        goldens_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "goldens", "outbound"))
+        os.makedirs(goldens_dir, exist_ok=True)
+        golden_path = os.path.join(goldens_dir, "budget_search.json")
+        with open(golden_path, "w", encoding="utf-8") as f:
+            json.dump(sent_msg["payload"], f, indent=2)
 
 def test_signature_verification_rejection():
     """

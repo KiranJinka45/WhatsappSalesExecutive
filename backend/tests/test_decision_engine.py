@@ -65,10 +65,10 @@ def test_refund_policy_auto(engine):
     assert result.risk_score == 30
     assert result.rule_triggered == "REFUND_POLICY"
 
-def test_discount_request_policy(engine):
-    # Rule 4: intent = discount_request
+def test_discount_inquiry_policy_exceeded(engine):
+    # Rule 4: intent = discount_inquiry, discount_limit = 0
     result = engine.evaluate(
-        intent="discount_request",
+        intent="discount_inquiry",
         policies=DEFAULT_POLICIES,
         grounding_valid=True,
         proposed_reply="Here is a 5% discount",
@@ -78,6 +78,36 @@ def test_discount_request_policy(engine):
     assert result.action == "wait_for_approval"
     assert result.risk_score == 80
     assert result.rule_triggered == "DISCOUNT_POLICY"
+
+def test_discount_inquiry_policy_allowed(engine):
+    # Rule 4: intent = discount_inquiry, discount_limit > 0
+    policies = DEFAULT_POLICIES.copy()
+    policies["discount_limit"] = 10
+    result = engine.evaluate(
+        intent="discount_inquiry",
+        policies=policies,
+        grounding_valid=True,
+        proposed_reply="Here is a 5% discount",
+        entities={},
+        catalog_context=[]
+    )
+    assert result.action == "send"
+    assert result.risk_score == 15
+    assert result.rule_triggered == "DISCOUNT_POLICY"
+
+def test_human_negotiation_policy(engine):
+    # Rule 4b: intent = human_negotiation
+    result = engine.evaluate(
+        intent="human_negotiation",
+        policies=DEFAULT_POLICIES,
+        grounding_valid=True,
+        proposed_reply="Can you bargain?",
+        entities={},
+        catalog_context=[]
+    )
+    assert result.action == "wait_for_approval"
+    assert result.risk_score == 85
+    assert result.rule_triggered == "HUMAN_NEGOTIATION"
 
 def test_bulk_order_threshold_exceeded(engine):
     # Rule 5: bulk order >= threshold

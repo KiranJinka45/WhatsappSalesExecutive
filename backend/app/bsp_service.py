@@ -45,7 +45,11 @@ def send_whatsapp_message(
             "text": content
         }
         if media_url:
-            payload["media_url"] = media_url
+            wasender_url = f"{settings.WASENDER_API_BASE_URL.rstrip('/')}/send-message"
+            if any(ext in media_url.lower() for ext in [".png", ".jpg", ".jpeg", ".webp"]):
+                payload["imageUrl"] = media_url
+            else:
+                payload["videoUrl"] = media_url
         try:
             response = httpx.post(wasender_url, json=payload, headers=headers, timeout=10.0)
             if response.status_code in (200, 201):

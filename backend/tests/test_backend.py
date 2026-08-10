@@ -29,7 +29,7 @@ class TestCloselyBackend(unittest.TestCase):
         self.classify_patch = patch('app.ai_service.classify_intent')
         self.mock_classify = self.classify_patch.start()
         self.mock_classify.side_effect = lambda msg, hist=None: (
-            "discount_request" if any(w in msg.lower() for w in ["discount", "wholesale", "human"]) 
+            "human_negotiation" if any(w in msg.lower() for w in ["discount", "wholesale", "human"]) 
             else "product_search"
         )
 
@@ -40,6 +40,14 @@ class TestCloselyBackend(unittest.TestCase):
         self.reply_patch = patch('app.ai_service.generate_reply')
         self.mock_reply = self.reply_patch.start()
         self.mock_reply.return_value = "Mocked AI Response: Here are some beautiful sarees for you!"
+
+        self.extract_patch = patch('app.ai_service.extract_entities')
+        self.mock_extract = self.extract_patch.start()
+        self.mock_extract.side_effect = lambda msg, hist=None: (
+            {"product_type": "sarees", "color": "black", "budget_max": 5000.0, "gender": "Women"}
+            if "black sarees under 5000" in msg.lower()
+            else {}
+        )
 
         # Clear out tables before each test to guarantee isolated states
         db = TestingSessionLocal()
@@ -53,6 +61,7 @@ class TestCloselyBackend(unittest.TestCase):
         self.classify_patch.stop()
         self.embedding_patch.stop()
         self.reply_patch.stop()
+        self.extract_patch.stop()
 
     def _create_test_owner(self):
         from app.routers.auth import login_limiter

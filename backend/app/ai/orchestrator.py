@@ -134,6 +134,10 @@ AI:"""
         response = generate_content(prompt, strategy="smart")
         raw_reply = response.text.strip() if response.text else ""
         
+        # If all LLM providers failed, trigger fallback and suggest manager connection
+        if response.provider == "fallback":
+            return "Namaste! We are currently experiencing technical difficulties. Let me connect you with a store manager to assist you directly."
+            
         if not raw_reply:
             return _mock_reply_fallback(customer_msg, catalog_context, policies_context, is_first_message=is_first_message)
             
