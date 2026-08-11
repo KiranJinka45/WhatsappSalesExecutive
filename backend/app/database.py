@@ -45,7 +45,8 @@ def set_tenant_in_transaction(session, transaction, connection):
             {"org_id": str(org_id)}
         )
     else:
-        connection.execute(text("SET LOCAL app.current_tenant = ''"))
+        # Fail-closed: set to a dummy UUID to prevent global RLS bypass
+        connection.execute(text("SET LOCAL app.current_tenant = '00000000-0000-0000-0000-000000000000'"))
 
 @event.listens_for(Session, "do_orm_execute")
 def do_orm_execute_tenant_filter(orm_execute_state):
@@ -68,6 +69,9 @@ def do_orm_execute_tenant_filter(orm_execute_state):
             )
             
     org_id = getattr(session, "organization_id", None) or tenant_var.get()
+    if org_id is None:
+        import uuid
+        org_id = uuid.UUID("00000000-0000-0000-0000-000000000000")
     
     if org_id is not None:
         import uuid

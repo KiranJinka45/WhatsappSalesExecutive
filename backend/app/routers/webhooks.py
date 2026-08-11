@@ -1172,9 +1172,8 @@ async def receive_whatsapp_message(
             org = db.query(models.Organization).filter(models.Organization.whatsapp_number == brand_phone).first()
         
         if not org:
-            org = db.query(models.Organization).first()
-            if not org:
-                return {"status": "error", "reason": "No registered brands found in the system."}
+            logger.error(f"Rejecting webhook message. Brand not found for phone_number_id={phone_number_id} and brand_phone={brand_phone}.")
+            return {"status": "error", "reason": "Tenant matching failed. Unknown brand."}
     finally:
         tenant_var.reset(token)
 
