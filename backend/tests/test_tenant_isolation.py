@@ -28,6 +28,7 @@ class TestTenantIsolation(unittest.TestCase):
 
         # Clear tables
         db = TestingSessionLocal()
+        db.is_admin = True
         clean_tables(db)
         db.close()
 
@@ -38,6 +39,7 @@ class TestTenantIsolation(unittest.TestCase):
 
         # Extract IDs
         db = TestingSessionLocal()
+        db.is_admin = True
         self.org_a = db.query(models.Organization).filter(models.Organization.name == "Brand A").first()
         self.org_b = db.query(models.Organization).filter(models.Organization.name == "Brand B").first()
         
@@ -67,6 +69,7 @@ class TestTenantIsolation(unittest.TestCase):
         """
         # Create product under Tenant B directly in DB
         db = TestingSessionLocal()
+        db.is_admin = True
         prod_b = models.Product(
             organization_id=self.org_b.id,
             sku="SKU-B",
@@ -118,6 +121,7 @@ class TestTenantIsolation(unittest.TestCase):
 
         # Verify in DB that it is associated with Tenant A's organization, not B
         db = TestingSessionLocal()
+        db.is_admin = True
         prod = db.query(models.Product).filter(models.Product.id == prod_id).first()
         self.assertEqual(prod.organization_id, self.org_a.id)
         db.close()
@@ -128,6 +132,7 @@ class TestTenantIsolation(unittest.TestCase):
         """
         # Create product under Tenant B directly in DB
         db = TestingSessionLocal()
+        db.is_admin = True
         prod_b = models.Product(
             organization_id=self.org_b.id,
             sku="SKU-B",
@@ -149,6 +154,7 @@ class TestTenantIsolation(unittest.TestCase):
 
         # Verify product B still exists in DB
         db = TestingSessionLocal()
+        db.is_admin = True
         exists = db.query(models.Product).filter(models.Product.id == prod_b_id).first()
         self.assertIsNotNone(exists)
         db.close()
@@ -159,6 +165,7 @@ class TestTenantIsolation(unittest.TestCase):
         """
         # Create conversation for Tenant B
         db = TestingSessionLocal()
+        db.is_admin = True
         conv_b = models.Conversation(
             organization_id=self.org_b.id,
             customer_phone="+919900002222",
@@ -294,6 +301,7 @@ class TestTenantIsolation(unittest.TestCase):
         ensuring rows remain in the DB with deleted_at set, but normal queries exclude them.
         """
         db = TestingSessionLocal()
+        db.is_admin = True
         # 1. Create a conversation for Tenant A
         conv_a = models.Conversation(
             organization_id=self.org_a.id,
