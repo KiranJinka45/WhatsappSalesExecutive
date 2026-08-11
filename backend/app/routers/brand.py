@@ -3,7 +3,35 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from .. import models, schemas, security
 
+import httpx
+import logging
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/brand", tags=["brand"], responses={401: {"description": "Unauthorized"}, 400: {"description": "Bad Request"}})
+
+def subscribe_waba_to_app(waba_id: str, access_token: str) -> bool:
+    """
+    Subscribes the WhatsApp Business Account to the App so we receive incoming message webhooks.
+    """
+    # Skip sandbox/mock subscription calls
+    if "demo" in waba_id or "demo" in access_token or "mock" in access_token:
+        logger.info(f"Skipping sandbox/mock webhook subscription for WABA: {waba_id}")
+        return True
+    url = f"https://graph.facebook.com/v18.0/{waba_id}/subscribed_apps"
+    headers = {
+        "Authorization": f"Bearer {access_token}"
+    }
+    try:
+        res = httpx.post(url, headers=headers, timeout=10.0)
+        if res.status_code == 200 and res.json().get("success") is True:
+            logger.info(f"Successfully subscribed WABA {waba_id} to webhooks.")
+            return True
+        else:
+            logger.error(f"Failed to subscribe WABA {waba_id} to webhooks: {res.status_code} - {res.text}")
+            return False
+    except Exception as e:
+        logger.error(f"Error subscribing WABA {waba_id} to webhooks: {e}", exc_info=True)
+        return False
 
 @router.get("/profile", response_model=schemas.OrganizationOut)
 def get_brand_profile(org: models.Organization = Depends(security.get_current_org)):
@@ -48,6 +76,13 @@ def update_brand_profile(
 
         db.commit()
         db.refresh(org)
+        
+        # Trigger webhook app subscription if WABA details are updated/exist
+        waba_id = org.whatsapp_business_account_id
+        access_token = org.whatsapp_access_token
+        if waba_id and access_token:
+            subscribe_waba_to_app(waba_id, access_token)
+            
         return org
     except HTTPException:
         db.rollback()
@@ -128,6 +163,10 @@ def handle_embedded_signup(
     
     db.commit()
     db.refresh(org)
+    
+    # Trigger webhook app subscription
+    if org.whatsapp_business_account_id and org.whatsapp_access_token:
+        subscribe_waba_to_app(org.whatsapp_business_account_id, org.whatsapp_access_token)
     
     return {
         "status": "success",
