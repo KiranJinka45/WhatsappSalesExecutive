@@ -1044,6 +1044,7 @@ async def receive_whatsapp_message(
     # Standardize incoming fields
     customer_phone = None
     brand_phone = None
+    phone_number_id = None
     message_text = ""
     customer_name = "Customer"
     message_id = None
@@ -1110,6 +1111,7 @@ async def receive_whatsapp_message(
                 contacts = value.get("contacts", [{}])[0]
                 customer_name = contacts.get("profile", {}).get("name", "Customer")
                 brand_phone = value.get("metadata", {}).get("display_phone_number")
+                phone_number_id = value.get("metadata", {}).get("phone_number_id")
                 message_id = message.get("id")
                 
                 if msg_type == "text":
@@ -1164,7 +1166,9 @@ async def receive_whatsapp_message(
     db.organization_id = None
     try:
         org = None
-        if brand_phone:
+        if phone_number_id:
+            org = db.query(models.Organization).filter(models.Organization.whatsapp_phone_number_id == phone_number_id).first()
+        if not org and brand_phone:
             org = db.query(models.Organization).filter(models.Organization.whatsapp_number == brand_phone).first()
         
         if not org:

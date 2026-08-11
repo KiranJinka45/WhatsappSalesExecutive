@@ -30,6 +30,7 @@ export default function App() {
   const [publicView, setPublicView] = useState('landing'); // 'landing', 'login', 'signup'
   const [isPublicCatalog, setIsPublicCatalog] = useState(false);
   const [tenantSlug, setTenantSlug] = useState('');
+  const [currentUserEmail, setCurrentUserEmail] = useState('');
 
   useEffect(() => {
     // Check if url path is public catalog route: /catalog/:tenant_slug
@@ -48,6 +49,8 @@ export default function App() {
     try {
       const res = await apiFetch('/api/auth/me');
       if (res.ok) {
+        const userData = await res.json();
+        setCurrentUserEmail(userData.email || '');
         setIsAuthenticated(true);
         setToken('cookie-auth');
         await fetchBrandProfile();
@@ -200,7 +203,7 @@ export default function App() {
       {/* Dynamic Tab Body Render with Lazy Loading & Suspense Shimmer Fallback */}
       <main style={styles.mainContent}>
         <Suspense fallback={<LazyShimmer />}>
-          {activeTab === 'inbox' && <Conversations token={token} brandPhone={brandPhone} />}
+          {activeTab === 'inbox' && <Conversations token={token} brandPhone={brandPhone} userEmail={currentUserEmail} />}
           {activeTab === 'catalog' && <Catalog token={token} />}
           {activeTab === 'settings' && <Settings token={token} />}
           {activeTab === 'analytics' && <Analytics token={token} />}

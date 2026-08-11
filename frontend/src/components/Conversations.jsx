@@ -8,23 +8,35 @@ const renderMessageContent = (text) => {
   const parts = text.split(urlRegex);
   return parts.map((part, index) => {
     if (part.match(urlRegex)) {
+      let cleanUrl = part;
+      let suffix = "";
+      const trailingPuncMatch = part.match(/[.,;!?]+$/);
+      if (trailingPuncMatch) {
+        cleanUrl = part.slice(0, -trailingPuncMatch[0].length);
+        suffix = trailingPuncMatch[0];
+      }
       return (
-        <a
-          key={index}
-          href={part}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ color: '#6366f1', textDecoration: 'underline', fontWeight: '500', wordBreak: 'break-all' }}
-        >
-          {part}
-        </a>
+        <React.Fragment key={index}>
+          <a
+            href={cleanUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: '#6366f1', textDecoration: 'underline', fontWeight: '500', wordBreak: 'break-all' }}
+          >
+            {cleanUrl}
+          </a>
+          {suffix}
+        </React.Fragment>
       );
     }
     return part;
   });
 };
 
-export default function Conversations({ token, brandPhone }) {
+const ADMIN_EMAILS = ['kiranjinka45@gmail.com', 'admin@closely.ai'];
+
+export default function Conversations({ token, brandPhone, userEmail }) {
+  const isAdmin = ADMIN_EMAILS.includes((userEmail || '').toLowerCase());
   const [conversations, setConversations] = useState([]);
   const [selectedConvId, setSelectedConvId] = useState(null);
   const [chatDetail, setChatDetail] = useState(null);
@@ -720,7 +732,7 @@ export default function Conversations({ token, brandPhone }) {
               )}
             </div>
           </div>
-        ) : (
+        ) : isAdmin ? (
           <>
             <div style={styles.simHeader}>
               <h3>WhatsApp Sandbox</h3>
@@ -786,6 +798,12 @@ export default function Conversations({ token, brandPhone }) {
               </ul>
             </div>
           </>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', textAlign: 'center', padding: '2rem' }}>
+            <span style={{ fontSize: '3rem', marginBottom: '1rem' }}>💬</span>
+            <h3 style={{ color: 'var(--text-primary)', marginBottom: '0.5rem' }}>Select a conversation</h3>
+            <p style={{ fontSize: '0.85rem', maxWidth: '280px' }}>Choose a customer conversation from the inbox to view the AI sales assistant in action.</p>
+          </div>
         )}
       </div>
     </div>
