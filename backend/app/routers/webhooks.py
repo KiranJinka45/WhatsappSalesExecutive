@@ -94,9 +94,14 @@ def process_message_async(
             # Retrieve organization details globally for settings/keys
             org_token = tenant_var.set(None)
             db.organization_id = None
+            old_is_admin = getattr(db, "is_admin", False)
+            db.is_admin = True
             try:
+                from sqlalchemy import text
+                db.execute(text("SET LOCAL app.current_tenant = ''"))
                 org = db.query(models.Organization).filter(models.Organization.id == org_uuid).first()
             finally:
+                db.is_admin = old_is_admin
                 tenant_var.reset(org_token)
                 db.organization_id = org_uuid
 
@@ -217,9 +222,14 @@ def process_message_async(
             catalog_context = []
             org_token = tenant_var.set(None)
             db.organization_id = None
+            old_is_admin = getattr(db, "is_admin", False)
+            db.is_admin = True
             try:
+                from sqlalchemy import text
+                db.execute(text("SET LOCAL app.current_tenant = ''"))
                 org = db.query(models.Organization).filter(models.Organization.id == org_uuid).first()
             finally:
+                db.is_admin = old_is_admin
                 tenant_var.reset(org_token)
                 db.organization_id = org_uuid
                 
@@ -932,13 +942,18 @@ def process_message_async(
             # Fetch organization policies and catalog items for grounded fallback
             org_token = tenant_var.set(None)
             db.organization_id = None
+            old_is_admin = getattr(db, "is_admin", False)
+            db.is_admin = True
             try:
+                from sqlalchemy import text
+                db.execute(text("SET LOCAL app.current_tenant = ''"))
                 org = db.query(models.Organization).filter(models.Organization.id == org_uuid).first()
                 products = db.query(models.Product).filter(
                     models.Product.organization_id == org_uuid,
                     models.Product.stock_count > 0
                 ).limit(10).all()
             finally:
+                db.is_admin = old_is_admin
                 tenant_var.reset(org_token)
                 db.organization_id = org_uuid
 
@@ -1164,7 +1179,11 @@ async def receive_whatsapp_message(
     # Temporarily unset tenant filter to find the correct org globally
     token = tenant_var.set(None)
     db.organization_id = None
+    old_is_admin = getattr(db, "is_admin", False)
+    db.is_admin = True
     try:
+        from sqlalchemy import text
+        db.execute(text("SET LOCAL app.current_tenant = ''"))
         org = None
         if phone_number_id:
             org = db.query(models.Organization).filter(models.Organization.whatsapp_phone_number_id == phone_number_id).first()
@@ -1185,6 +1204,7 @@ async def receive_whatsapp_message(
             logger.error(f"Rejecting webhook message. Brand not found for phone_number_id={phone_number_id} and brand_phone={brand_phone}.")
             return {"status": "error", "reason": "Tenant matching failed. Unknown brand."}
     finally:
+        db.is_admin = old_is_admin
         tenant_var.reset(token)
 
     # Set tenant context for the remainder of the synchronous request
