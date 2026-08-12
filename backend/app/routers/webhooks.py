@@ -1170,6 +1170,16 @@ async def receive_whatsapp_message(
             org = db.query(models.Organization).filter(models.Organization.whatsapp_phone_number_id == phone_number_id).first()
         if not org and brand_phone:
             org = db.query(models.Organization).filter(models.Organization.whatsapp_number == brand_phone).first()
+            if not org:
+                # Fallback to normalized comparison of last 10 digits to prevent formatting mismatches (+ prefix, spaces, dashes)
+                clean_brand = "".join(c for c in brand_phone if c.isdigit())
+                if clean_brand:
+                    all_orgs = db.query(models.Organization).filter(models.Organization.whatsapp_number.isnot(None)).all()
+                    for o in all_orgs:
+                        clean_db = "".join(c for c in o.whatsapp_number if c.isdigit())
+                        if clean_brand == clean_db or (len(clean_brand) >= 10 and len(clean_db) >= 10 and clean_brand[-10:] == clean_db[-10:]):
+                            org = o
+                            break
         
         if not org:
             logger.error(f"Rejecting webhook message. Brand not found for phone_number_id={phone_number_id} and brand_phone={brand_phone}.")
@@ -1180,6 +1190,9 @@ async def receive_whatsapp_message(
     # Set tenant context for the remainder of the synchronous request
     tenant_var.set(org.id)
     db.organization_id = org.id
+    # Force the local variable update in PostgreSQL immediately to override dummy sentinel
+    from sqlalchemy import text
+    db.execute(text("SET LOCAL app.current_tenant = :org_id"), {"org_id": str(org.id)})
 
     # Resolve/Create conversation
     conv = db.query(models.Conversation).filter(

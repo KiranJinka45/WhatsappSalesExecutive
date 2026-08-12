@@ -163,21 +163,21 @@ export default function App() {
             style={styles.navBtn}
             onClick={() => setActiveTab('inbox')}
           >
-            Conversations
+            Chats
           </button>
           <button
             className={`btn ${activeTab === 'catalog' ? 'btn-primary' : 'btn-secondary'}`}
             style={styles.navBtn}
             onClick={() => setActiveTab('catalog')}
           >
-            Product Catalog
+            Catalog
           </button>
           <button
             className={`btn ${activeTab === 'settings' ? 'btn-primary' : 'btn-secondary'}`}
             style={styles.navBtn}
             onClick={() => setActiveTab('settings')}
           >
-            System Settings
+            Settings
           </button>
           <button
             className={`btn ${activeTab === 'analytics' ? 'btn-primary' : 'btn-secondary'}`}

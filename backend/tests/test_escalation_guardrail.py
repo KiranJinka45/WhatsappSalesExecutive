@@ -18,6 +18,7 @@ def mock_db_and_conv():
     customer_phone = "+1234567890"
     
     db = SessionLocal()
+    db.is_admin = True
     org = models.Organization(id=org_id, name="Test Org", whatsapp_number="+0987654321")
     db.add(org)
     
@@ -29,6 +30,7 @@ def mock_db_and_conv():
     yield org_id, conv_id, customer_phone
     
     db = SessionLocal()
+    db.is_admin = True
     conv = db.query(models.Conversation).filter_by(id=conv_id).first()
     if conv:
         db.delete(conv)
@@ -90,6 +92,7 @@ def test_escalation_guardrail_approval_path(mock_db_and_conv):
         
         # Check conversation status
         db = SessionLocal()
+        db.is_admin = True
         conv = db.query(models.Conversation).filter_by(id=conv_id).first()
         assert conv.status == "WAITING_APPROVAL"
         db.close()
@@ -116,6 +119,7 @@ def test_escalation_guardrail_persistent_failure(mock_db_and_conv):
         
         # Check conversation status is "AI_ACTIVE"
         db = SessionLocal()
+        db.is_admin = True
         conv = db.query(models.Conversation).filter_by(id=conv_id).first()
         assert conv.status == "AI_ACTIVE"
         db.close()

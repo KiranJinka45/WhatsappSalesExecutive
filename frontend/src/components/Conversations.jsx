@@ -602,210 +602,206 @@ export default function Conversations({ token, brandPhone, userEmail }) {
           </>
         ) : (
           <div style={styles.selectPrompt}>
-            <h3>Please select a conversation from the left to manage it.</h3>
+            <h3>Please select a chat from the left to manage it.</h3>
           </div>
         )}
       </div>
 
       {/* 3. Right Sidebar: Customer WhatsApp Simulator Sandbox Console / AI Explainability Inspector */}
-      <div className="glass-panel" style={styles.simulatorPanel}>
-        {inspectedMessage ? (
-          <div>
-            <div style={styles.simHeader}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                <h3>AI Inspector</h3>
-                <div style={{ display: 'flex', gap: '0.25rem' }}>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
-                    onClick={() => exportDebugLog(chatDetail, inspectedMessage)}
-                  >
-                    📥 Export
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
-                    onClick={() => setInspectedMessage(null)}
-                  >
-                    ← Sandbox
-                  </button>
-                </div>
-              </div>
-              <p>Audit trail of AI decisions and logic for this message.</p>
-            </div>
-
-            <div style={styles.inspectorScroll}>
-              <div style={styles.inspectorSection}>
-                <div style={styles.label}>Why AI Recommended This</div>
-                <div style={{ marginTop: '0.5rem', fontSize: '0.85rem' }}>
-                  <strong>✓ Customer requirements detected:</strong>
-                  <ul style={{ paddingLeft: '1.25rem', marginTop: '0.25rem', color: 'var(--text-secondary)' }}>
-                    {Object.entries(inspectedMessage.metadata.entities_extracted || {}).map(([key, val]) => (
-                      val ? (
-                        <li key={key}>
-                          {key.replace('_', ' ').toUpperCase()}: <strong>{String(val)}</strong>
-                        </li>
-                      ) : null
-                    ))}
-                    {(!inspectedMessage.metadata.entities_extracted || Object.keys(inspectedMessage.metadata.entities_extracted).length === 0) && (
-                      <li>No specific filters detected (General browsing query)</li>
-                    )}
-                  </ul>
-                </div>
-              </div>
-
-              <div style={styles.inspectorSection}>
-                <div style={styles.label}>Matching Products Recommended</div>
-                {inspectedMessage.metadata.retrieved_products && inspectedMessage.metadata.retrieved_products.length > 0 ? (
-                  <ul style={{ paddingLeft: '1.25rem', marginTop: '0.25rem', listStyleType: 'none' }}>
-                    {inspectedMessage.metadata.retrieved_products.map((sku, index) => (
-                      <li key={sku} style={{ fontSize: '0.85rem', color: 'var(--accent-secondary)', marginBottom: '0.75rem' }}>
-                        <strong>{sku}</strong> (Rank #{index + 1})
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                          Matches budget, color, and fabric preferences.
-                        </div>
-                        {/* Rating section */}
-                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.25rem' }}>
-                          <button
-                            type="button"
-                            className="btn btn-secondary"
-                            style={{ padding: '0.1rem 0.3rem', fontSize: '0.7rem' }}
-                            onClick={() => submitFeedback(inspectedMessage.id, sku, 1)}
-                          >
-                            👍 Good
-                          </button>
-                          <select
-                            defaultValue=""
-                            style={{ padding: '0.1rem 0.3rem', fontSize: '0.7rem', background: 'rgba(0,0,0,0.2)', color: 'var(--text-primary)', border: '1px solid var(--glass-border)' }}
-                            onChange={(e) => {
-                              if (e.target.value) {
-                                submitFeedback(inspectedMessage.id, sku, -1, e.target.value);
-                                e.target.value = ""; // Reset
-                              }
-                            }}
-                          >
-                            <option value="" disabled>👎 Incorrect (Select Reason)</option>
-                            <option value="Wrong Product">Wrong Product</option>
-                            <option value="Wrong Budget">Wrong Budget</option>
-                            <option value="Wrong Color">Wrong Color</option>
-                            <option value="Wrong Fabric">Wrong Fabric</option>
-                            <option value="Wrong Size">Wrong Size</option>
-                            <option value="Hallucinated">Hallucinated</option>
-                            <option value="Other">Other</option>
-                          </select>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>None found matching criteria.</div>
-                )}
-              </div>
-
-              <div style={styles.inspectorSection}>
-                <div style={styles.label}>Excluded/Rejected Products</div>
-                {inspectedMessage.metadata.rejected_products && inspectedMessage.metadata.rejected_products.length > 0 ? (
-                  <ul style={{ paddingLeft: '1.25rem', marginTop: '0.25rem' }}>
-                    {inspectedMessage.metadata.rejected_products.map((sku) => (
-                      <li key={sku} style={{ fontSize: '0.85rem', color: 'var(--accent-primary)', marginBottom: '0.4rem' }}>
-                        <strong>{sku}</strong>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                          Excluded: Budget limit exceeded or item is Out of Stock.
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>None filtered out.</div>
-                )}
-              </div>
-
-              {inspectedMessage.metadata.escalation_reason && (
-                <div style={styles.inspectorSection}>
-                  <div style={{ ...styles.label, color: 'var(--accent-primary)' }}>Escalated to Merchant</div>
-                  <div style={{ fontSize: '0.85rem', color: 'var(--accent-primary)', marginTop: '0.25rem' }}>
-                    Reason: <strong>{inspectedMessage.metadata.escalation_reason}</strong>
+      {(isAdmin || inspectedMessage) && (
+        <div className="glass-panel" style={styles.simulatorPanel}>
+          {inspectedMessage ? (
+            <div>
+              <div style={styles.simHeader}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <h3>AI Inspector</h3>
+                  <div style={{ display: 'flex', gap: '0.25rem' }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
+                      onClick={() => exportDebugLog(chatDetail, inspectedMessage)}
+                    >
+                      📥 Export
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
+                      onClick={() => setInspectedMessage(null)}
+                    >
+                      ← Sandbox
+                    </button>
                   </div>
                 </div>
-              )}
-            </div>
-          </div>
-        ) : isAdmin ? (
-          <>
-            <div style={styles.simHeader}>
-              <h3>WhatsApp Sandbox</h3>
-              <p>Simulate customer requests to test AI classification & semantic searches.</p>
-            </div>
+                <p>Audit trail of AI decisions and logic for this message.</p>
+              </div>
 
-            <form onSubmit={handleSendSimulatedMessage} style={styles.simForm}>
-              <div style={styles.inputGroup}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <label style={styles.label}>Simulated Phone</label>
-                  <button
-                    type="button"
-                    style={{ background: 'none', border: 'none', color: 'var(--accent-primary)', cursor: 'pointer', fontSize: '0.75rem', textDecoration: 'underline' }}
-                    onClick={() => {
-                      const randDigits = Math.floor(10000000 + Math.random() * 90000000);
-                      const names = ["Ananya Rao", "Priya Sharma", "Sita Reddy", "Lakshmi Devi", "Kiran Kumar"];
-                      const randName = names[Math.floor(Math.random() * names.length)];
-                      setSimPhone(`+9199${randDigits}`);
-                      setSimName(randName);
-                    }}
-                  >
-                    🎲 New Test Customer
-                  </button>
+              <div style={styles.inspectorScroll}>
+                <div style={styles.inspectorSection}>
+                  <div style={styles.label}>Why AI Recommended This</div>
+                  <div style={{ marginTop: '0.5rem', fontSize: '0.85rem' }}>
+                    <strong>✓ Customer requirements detected:</strong>
+                    <ul style={{ paddingLeft: '1.25rem', marginTop: '0.25rem', color: 'var(--text-secondary)' }}>
+                      {Object.entries(inspectedMessage.metadata.entities_extracted || {}).map(([key, val]) => (
+                        val ? (
+                          <li key={key}>
+                            {key.replace('_', ' ').toUpperCase()}: <strong>{String(val)}</strong>
+                          </li>
+                        ) : null
+                      ))}
+                      {(!inspectedMessage.metadata.entities_extracted || Object.keys(inspectedMessage.metadata.entities_extracted).length === 0) && (
+                        <li>No specific filters detected (General browsing query)</li>
+                      )}
+                    </ul>
+                  </div>
                 </div>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={simPhone}
-                  onChange={(e) => setSimPhone(e.target.value)}
-                />
-              </div>
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Simulated Name</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={simName}
-                  onChange={(e) => setSimName(e.target.value)}
-                />
-              </div>
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Inbound Message</label>
-                <textarea
-                  className="form-input"
-                  style={styles.simTextarea}
-                  placeholder="e.g. show me black sarees under 5000"
-                  value={simText}
-                  onChange={(e) => setSimText(e.target.value)}
-                  required
-                />
-              </div>
-              <button type="submit" className="btn btn-primary" style={{ width: '100%' }} disabled={loading}>
-                {loading ? 'AI thinking...' : '🚀 Send Inbound Webhook'}
-              </button>
-            </form>
 
-            <div style={styles.simInfoCard}>
-              <h4>Recommended Sandbox Queries:</h4>
-              <ul>
-                <li>"Show me black sarees under 5000" (Check semantic catalog retrieval)</li>
-                <li>"Is COD available?" (Check logistics policy RAG)</li>
-                <li>"Can I talk to a human?" (Check instant takeover escalation)</li>
-              </ul>
+                <div style={styles.inspectorSection}>
+                  <div style={styles.label}>Matching Products Recommended</div>
+                  {inspectedMessage.metadata.retrieved_products && inspectedMessage.metadata.retrieved_products.length > 0 ? (
+                    <ul style={{ paddingLeft: '1.25rem', marginTop: '0.25rem', listStyleType: 'none' }}>
+                      {inspectedMessage.metadata.retrieved_products.map((sku, index) => (
+                        <li key={sku} style={{ fontSize: '0.85rem', color: 'var(--accent-secondary)', marginBottom: '0.75rem' }}>
+                          <strong>{sku}</strong> (Rank #{index + 1})
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                            Matches budget, color, and fabric preferences.
+                          </div>
+                          {/* Rating section */}
+                          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.25rem' }}>
+                            <button
+                              type="button"
+                              className="btn btn-secondary"
+                              style={{ padding: '0.1rem 0.3rem', fontSize: '0.7rem' }}
+                              onClick={() => submitFeedback(inspectedMessage.id, sku, 1)}
+                            >
+                              👍 Good
+                            </button>
+                            <select
+                              defaultValue=""
+                              style={{ padding: '0.1rem 0.3rem', fontSize: '0.7rem', background: 'rgba(0,0,0,0.2)', color: 'var(--text-primary)', border: '1px solid var(--glass-border)' }}
+                              onChange={(e) => {
+                                if (e.target.value) {
+                                  submitFeedback(inspectedMessage.id, sku, -1, e.target.value);
+                                  e.target.value = ""; // Reset
+                                }
+                              }}
+                            >
+                              <option value="" disabled>👎 Incorrect (Select Reason)</option>
+                              <option value="Wrong Product">Wrong Product</option>
+                              <option value="Wrong Budget">Wrong Budget</option>
+                              <option value="Wrong Color">Wrong Color</option>
+                              <option value="Wrong Fabric">Wrong Fabric</option>
+                              <option value="Wrong Size">Wrong Size</option>
+                              <option value="Hallucinated">Hallucinated</option>
+                              <option value="Other">Other</option>
+                            </select>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>None found matching criteria.</div>
+                  )}
+                </div>
+
+                <div style={styles.inspectorSection}>
+                  <div style={styles.label}>Excluded/Rejected Products</div>
+                  {inspectedMessage.metadata.rejected_products && inspectedMessage.metadata.rejected_products.length > 0 ? (
+                    <ul style={{ paddingLeft: '1.25rem', marginTop: '0.25rem' }}>
+                      {inspectedMessage.metadata.rejected_products.map((sku) => (
+                        <li key={sku} style={{ fontSize: '0.85rem', color: 'var(--accent-primary)', marginBottom: '0.4rem' }}>
+                          <strong>{sku}</strong>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                            Excluded: Budget limit exceeded or item is Out of Stock.
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>None filtered out.</div>
+                  )}
+                </div>
+
+                {inspectedMessage.metadata.escalation_reason && (
+                  <div style={styles.inspectorSection}>
+                    <div style={{ ...styles.label, color: 'var(--accent-primary)' }}>Escalated to Merchant</div>
+                    <div style={{ fontSize: '0.85rem', color: 'var(--accent-primary)', marginTop: '0.25rem' }}>
+                      Reason: <strong>{inspectedMessage.metadata.escalation_reason}</strong>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
-          </>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', textAlign: 'center', padding: '2rem' }}>
-            <span style={{ fontSize: '3rem', marginBottom: '1rem' }}>💬</span>
-            <h3 style={{ color: 'var(--text-primary)', marginBottom: '0.5rem' }}>Select a conversation</h3>
-            <p style={{ fontSize: '0.85rem', maxWidth: '280px' }}>Choose a customer conversation from the inbox to view the AI sales assistant in action.</p>
-          </div>
-        )}
-      </div>
+          ) : (
+            <>
+              <div style={styles.simHeader}>
+                <h3>WhatsApp Sandbox</h3>
+                <p>Simulate customer requests to test AI classification & semantic searches.</p>
+              </div>
+
+              <form onSubmit={handleSendSimulatedMessage} style={styles.simForm}>
+                <div style={styles.inputGroup}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <label style={styles.label}>Simulated Phone</label>
+                    <button
+                      type="button"
+                      style={{ background: 'none', border: 'none', color: 'var(--accent-primary)', cursor: 'pointer', fontSize: '0.75rem', textDecoration: 'underline' }}
+                      onClick={() => {
+                        const randDigits = Math.floor(10000000 + Math.random() * 90000000);
+                        const names = ["Ananya Rao", "Priya Sharma", "Sita Reddy", "Lakshmi Devi", "Kiran Kumar"];
+                        const randName = names[Math.floor(Math.random() * names.length)];
+                        setSimPhone(`+9199${randDigits}`);
+                        setSimName(randName);
+                      }}
+                    >
+                      🎲 New Test Customer
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={simPhone}
+                    onChange={(e) => setSimPhone(e.target.value)}
+                  />
+                </div>
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>Simulated Name</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={simName}
+                    onChange={(e) => setSimName(e.target.value)}
+                  />
+                </div>
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>Inbound Message</label>
+                  <textarea
+                    className="form-input"
+                    style={styles.simTextarea}
+                    placeholder="e.g. show me black sarees under 5000"
+                    value={simText}
+                    onChange={(e) => setSimText(e.target.value)}
+                    required
+                  />
+                </div>
+                <button type="submit" className="btn btn-primary" style={{ width: '100%' }} disabled={loading}>
+                  {loading ? 'AI thinking...' : '🚀 Send Inbound Webhook'}
+                </button>
+              </form>
+
+              <div style={styles.simInfoCard}>
+                <h4>Recommended Sandbox Queries:</h4>
+                <ul>
+                  <li>"Show me black sarees under 5000" (Check semantic catalog retrieval)</li>
+                  <li>"Is COD available?" (Check logistics policy RAG)</li>
+                  <li>"Can I talk to a human?" (Check instant takeover escalation)</li>
+                </ul>
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

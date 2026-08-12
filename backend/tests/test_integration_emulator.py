@@ -36,6 +36,7 @@ def clean_emulator_and_db():
     
     # Setup test database tables cleanly
     db = TestingSessionLocal()
+    db.is_admin = True
     clean_tables(db)
     
     # Ensure at least one test Organization exists
@@ -111,6 +112,7 @@ def test_emulator_end_to_end_loop():
         
         # Seed a simple category and product for search
         db = TestingSessionLocal()
+        db.is_admin = True
         org = db.query(models.Organization).first()
         category = models.Category(organization_id=org.id, name="Sarees")
         db.add(category)
@@ -213,6 +215,7 @@ def test_chaos_server_error_takeover():
 
     # Seed a simple category and product for search
     db = TestingSessionLocal()
+    db.is_admin = True
     org = db.query(models.Organization).first()
     category = models.Category(organization_id=org.id, name="Sarees")
     db.add(category)
@@ -251,6 +254,7 @@ def test_chaos_server_error_takeover():
     
     # Verify conversation status remains AI_ACTIVE and reply is preserved for dashboard
     db = TestingSessionLocal()
+    db.is_admin = True
     conv = db.query(models.Conversation).filter(models.Conversation.customer_phone == "919876543210").first()
     assert conv is not None
     assert conv.status == "AI_ACTIVE"
@@ -270,6 +274,7 @@ def test_csv_line_endings_normalization():
     
     # Retrieve user from DB to sign JWT correctly
     db = TestingSessionLocal()
+    db.is_admin = True
     user = db.query(models.User).first()
     db.close()
     
@@ -297,6 +302,7 @@ def test_csv_line_endings_normalization():
     
     # Verify in DB
     db = TestingSessionLocal()
+    db.is_admin = True
     prod = db.query(models.Product).filter(models.Product.sku == "SKU-MAC-101").first()
     assert prod is not None
     assert prod.name == "Mac Silk Kurta"
@@ -313,6 +319,7 @@ def test_webhook_idempotency():
 
     # Seed a simple category and product for search
     db = TestingSessionLocal()
+    db.is_admin = True
     org = db.query(models.Organization).first()
     category = models.Category(organization_id=org.id, name="Sarees")
     db.add(category)
@@ -349,6 +356,7 @@ def test_webhook_idempotency():
     
     # Assert database structures: exactly 1 conversation and 1 customer message + 1 AI reply
     db = TestingSessionLocal()
+    db.is_admin = True
     conversations = db.query(models.Conversation).filter(models.Conversation.customer_phone == "917777777777").all()
     assert len(conversations) == 1
     
@@ -371,6 +379,7 @@ def test_retry_verification():
 
     # Seed a simple category and product for search
     db = TestingSessionLocal()
+    db.is_admin = True
     org = db.query(models.Organization).first()
     category = models.Category(organization_id=org.id, name="Sarees")
     db.add(category)
@@ -413,6 +422,7 @@ def test_retry_verification():
     
     # Assert database structures: exactly 1 conversation and 1 outbound AI message
     db = TestingSessionLocal()
+    db.is_admin = True
     conv = db.query(models.Conversation).filter(models.Conversation.customer_phone == "919999999999").first()
     assert conv is not None
     # Since it recovered and succeeded, status should be AI_ACTIVE

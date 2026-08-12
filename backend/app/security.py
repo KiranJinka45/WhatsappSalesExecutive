@@ -80,6 +80,9 @@ def get_current_user(token: str = Depends(get_token), db: Session = Depends(get_
     # Set both context variable and session attribute
     tenant_var.set(user.organization_id)
     db.organization_id = user.organization_id
+    # Force the local variable update in PostgreSQL immediately to enforce RLS
+    from sqlalchemy import text
+    db.execute(text("SET LOCAL app.current_tenant = :org_id"), {"org_id": str(user.organization_id)})
     return user
 
 def get_current_org(current_user: models.User = Depends(get_current_user)) -> models.Organization:
