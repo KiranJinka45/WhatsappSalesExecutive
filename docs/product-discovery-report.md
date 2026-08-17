@@ -1,56 +1,133 @@
 # Closely AI - Product Discovery Report
 
+> [!IMPORTANT]
+> **Core Strategic Principle**: Do not confuse a visually impressive prototype with a validated product. Product-market fit must be verified through empirical pilot metrics and customer willingness to pay before scaling.
+
+---
+
 ## 1. Executive Summary
-Closely AI is a multi-tenant Conversational Commerce platform designed to empower independent clothing boutiques and retail brands to automate sales qualification, catalog recommendation, and order collection directly over WhatsApp. By integrating a deterministic decision engine with conversational large language models, Closely AI guarantees zero-hallucination accuracy on product details and inventory, resolving the primary trust barrier in automated retail commerce.
+Closely AI is a **horizontal, multi-tenant conversational workforce platform** designed to provide specialized AI employees for customer communication, sales qualification, support, and workflow automation. 
+
+To achieve speed-to-market and deep domain validation, Closely AI executes a focused **beachhead strategy in Apparel Retail**: a **WhatsApp Catalog-Response Copilot** built specifically for independent clothing boutiques and retail brand operators. By combining a **Deterministic Decision Engine** with generative language models, Closely AI **uses deterministic validation to prevent unsupported price, stock, and policy claims** while maintaining human approval control over exceptions, bargaining, and complaints.
 
 ---
 
-## 2. Customer Profile & Target User Persona
-Conversational commerce on WhatsApp is a necessity for mobile-first markets (such as India and Latin America), where consumers bypass web search and buy directly through chat.
+## 2. Foundational Product Definition
 
-### Core User Persona: The Independent Boutique Owner (e.g., Somu Sekhar)
-* **Demographics**: Owner of an independent retail boutique (e.g., *Pushpalatha Silks* or *Sri Siddi Vinayaka Silks* in Dharmavaram, India).
-* **Core Business**: Sells high-quality sarees, kurtis, and custom apparel. Uses physical store traffic, Instagram showcases, and WhatsApp chat groups to drive sales.
-* **Daily Workflow**: Receives 100–300 WhatsApp messages per day from customers asking: *"Do you have this saree in blue?"*, *"What is the price of this kurti?"*, or *"Can you send close-up photos of the fabric?"*
-* **Primary Pain Points & Stress Triggers**:
-  - **High Lead Drop-Off**: Customers shopping on WhatsApp expect replies within 1–2 minutes. If the owner is busy attending to in-store customers, reply delays stretch to hours, resulting in a **50%+ lead drop-off rate**.
-  - **Manual Catalog Searching**: Searching through a CSV inventory sheet or phone gallery for matching designs, colors, and sizes while typing replies is tedious and slow.
-  - **Bargaining and Negotiation Fatigue**: Customers constantly haggle over prices (e.g., *"Konchem thagginchandi"* in Telugu), requiring the owner to decide on discounts in real-time.
-  - **Order Tracking Dissociation**: Payment verification and shipping detail collections are handled in disjointed threads, leading to bookkeeping errors.
+### 1. Who is the customer?
+* **Beachhead Customer (Apparel Retail)**: Independent silk saree and traditional apparel boutique owners (e.g., proposed pilot merchant *Pushpalatha Silks* in Dharmavaram or Kanchipuram) receiving 50+ inbound customer inquiries daily over WhatsApp.
+* **Platform Customer (Long-term Vision)**: Department heads in Education, Real Estate, Healthcare, Fintech, and Banking requiring policy-governed AI agents.
 
----
+### 2. What painful problem do they have?
+* **Lead Drop-Off from Delayed Replies**: Shoppers on WhatsApp expect immediate responses (<2 minutes). When boutique staff are occupied with in-store customers, reply delays stretch to hours, leading to dropped buying intent.
+* **Manual Catalog & Inventory Bottleneck**: Searching phone galleries or spreadsheets for matching SKUs, sizes, colors, and prices while typing individual chat responses is slow and error-prone.
 
-## 3. The Pain-Point & Value Proposition Matrix
-Closely AI addresses these pains with a targeted value proposition:
+### 3. How do they solve it today?
+* Boutique owners and staff manually manage customer chats on personal smartphones, juggling physical store customers, gallery photos, and handwritten inventory logs.
 
-| Customer Pain | Closely AI Solution | Business Outcome |
-|---|---|---|
-| **Slow Response Times** | 24/7 automated instant greetings, size/color discovery, and catalog recommendation. | **95%+ decrease in response latency**, capturing impulse buyers. |
-| **Inventory Fact Hallucination** | Deterministic catalog lookup (SQL + vector) overrides generative outputs. AI never invents a price or promises out-of-stock items. | **100% pricing accuracy**, maintaining brand trust and customer confidence. |
-| **Bargaining and Policy Exceptions** | Deterministic Decision Engine intercepts bargaining and complaints, routing them to a Human Takeover Queue. | **Zero unauthorized discounts**, while preserving human focus for high-value negotiations. |
-| **Sizing Disconnect** | Customer memory profile stores size/color history for hyper-personalized future drops. | **Higher customer lifetime value (LTV)** and reduced return rates. |
+### 4. Why will they pay?
+* **Recovered Sales Revenue**: Faster catalog lookup and draft response generation during peak buying intent captures lost sales opportunities.
+* **Operational Time Savings**: Saves 10+ hours per week of manual messaging, allowing staff to focus on in-store sales and fulfillment.
+
+### 5. What is the smallest feature that proves value?
+* **WhatsApp Catalog-Response Copilot**: An assistant that ingests CSV/Google Sheet inventory, retrieves verified product price and stock details, generates structured draft replies, and routes bargaining or policy exceptions to the merchant for approval.
 
 ---
 
-## 4. Competitive Moat & Apparel Specialization
-Unlike generic conversational AI platforms (e.g., general-purpose support widgets), Closely AI is custom-engineered for retail boutique commerce:
+## 3. Product Validation Hypotheses
 
-1. **Fashion-Specific Taxonomy & Multilingual Script Recognition**:
-   Recognizes localized clothing terminology (e.g., *Banarasi, Anarkali, Kurti, Zari border, Georgette*) in multiple languages (English, Telugu, Hindi) and formats (Latin transliteration vs. native scripts).
-2. **Preference Profiling & Customer Memory**:
-   Remembers customer history (e.g., *"Sita preferred M-size cotton sarees under 3000"*). When she returns, the system automatically skews recommendations to match.
-3. **Visual & Multimodal Retrieval**:
-   Apparel shopping is inherently visual. Customers can send an image of a dress they saw on Instagram, and the backend performs multimodal visual search (using Gemini embeddings) to find the closest matching SKU in the boutique's catalog.
-4. **Deterministic Escalate-on-Exception**:
-   Guarantees safety-first commerce. Any deviation from stored store policies immediately locks the conversation under a `WAITING_APPROVAL` status, alerting the owner to intervene.
+Rather than stating unverified metrics as facts, Closely AI evaluates success against six explicitly testable hypotheses:
+
+* **H1 (Inquiry Volume)**: At least 3 of 5 interviewed boutiques receive 50+ WhatsApp inquiries daily.
+* **H2 (Response Latency Impact)**: At least 3 of 5 boutiques report that delayed replies directly cause lost or abandoned sales opportunities.
+* **H3 (Response Latency Reduction)**: During the live pilot, Closely AI reduces median first-response time from the merchant's manual baseline to below 60 seconds (with human approval).
+* **H4 (Deterministic Grounding Accuracy)**: In the approved test dataset, Closely AI returns correct price and availability for at least 99% of applicable queries.
+* **H5 (Qualified Intent Capture)**: During the pilot, the merchant confirms that Closely AI increases qualified order intents compared with the baseline period.
+* **H6 (Commercial Willingness to Pay)**: At least one merchant agrees to continue with a paid pilot after the 14-day trial.
 
 ---
 
-## 5. Commercial Viability & SaaS Strategy
-Closely AI operates on a B2B SaaS model tailored for retail merchants:
-- **Base Subscription Tier**: Fixed monthly subscription fee covering catalog management, dashboard access, and 500 automated conversations/month.
-- **Usage-Based Inbound Credits**: Per-conversation usage charges on top of the base subscription to cover Meta Cloud API and LLM token costs.
-- **Value-Added Premium Features**:
-  - Outbound marketing campaign automation (broadcasting new drops to qualified customer profiles).
-  - Advanced analytics on conversion rates and inventory demand forecasting.
-  - Custom visual search integrations.
+## 4. Product Quality, Accuracy & Safety Framework
+
+Generative language models cannot guarantee 100% natural-language accuracy. Closely AI enforces a multi-layered accuracy model:
+
+```
+Incoming Customer Query
+      │
+      ▼
+Intent Classification & Entity Extraction
+      │
+      ▼
+Deterministic DB Lookup (Price, Stock, SKUs) ──► [100% Rule Accuracy Required]
+      │
+      ▼
+Tenant Policy Check (Discounts, Returns) ────────► [100% Policy Bounds Required]
+      │
+      ├── Exact Match & Policy Compliant ───────► Generate Draft Response
+      ├── Low Confidence / Out of Stock ─────────► Express Explicit Uncertainty
+      └── Bargaining / Refund / Complaint ────────► Escalate to Human Approval Queue
+```
+
+### Acceptance Targets
+* **Price Correctness**: 100% in deterministic validation tests against the live database snapshot.
+* **Stock Correctness**: 100% against the live database snapshot.
+* **Unsupported Product Claims**: 0 hallucinated claims in the golden evaluation dataset.
+* **Escalation Recall**: 100% escalation for defined high-risk scenarios (discounts, refunds, complaints).
+* **Intent Classification Accuracy**: ≥95% on the initial golden evaluation set.
+* **Draft-Generation Latency**: Median <3.0 seconds for cached/simple queries (measured from webhook intake to draft ready in dashboard).
+* **p95 Latency**: Tracked separately for complex or human-approval flows.
+
+---
+
+## 5. Horizontal Platform Architecture vs. Vertical Modules
+
+Closely AI cleanly separates reusable platform infrastructure from industry-specific domain modules:
+
+### Horizontal Core (Reusable Infrastructure)
+* **Tenancy & Isolation**: Multi-tenant database architecture with **tenant isolation enforced by RLS and verified through concurrency tests**.
+* **Identity & Governance**: RBAC (Owner vs. Staff), JWT auth, zero secret leakage, audit logs.
+* **Conversation Management**: Inbox, message store, status management (`AI_ACTIVE`, `WAITING_APPROVAL`, `HUMAN_AGENT`).
+* **Deterministic Policy Engine**: Policy boundary checker, fallback rules, exception routing.
+* **Human Approval Queue**: Web & notification interface for merchant review before dispatch.
+* **Evaluations & Quality**: Golden dataset evals, draft-generation latency metrics, groundedness checks.
+
+### Apparel Retail Domain Module (Version 1 Beachhead)
+* **Domain Entities**: Products, SKUs, Categories, Sizes, Colors, Fabrics, Stock Counts, Images.
+* **Workflows**: Catalog search, availability check, order intent collection, retail FAQ policies.
+
+### Future Vertical Modules (Post-MVP Expansion)
+* **Education & Admissions**: Course inquiries, student qualification, counselor scheduling.
+* **Real Estate**: Property discovery, buyer qualification, site visit booking.
+* **Healthcare (Future Scope)**: Service FAQs, appointment requests, staff confirmation. *Future scope subject to formal HIPAA/DISHA compliance implementation, PII encryption, zero medical advice generation.*
+* **Fintech & Banking (Future Scope)**: Product FAQs, eligibility guidance, secure handoff. *Future scope subject to formal KYC/AML/SOC 2 compliance implementation and human credit decision locks.*
+
+---
+
+## 6. Explicit Non-Goals for Version 1 MVP
+
+To prevent scope creep and ensure execution focus, the following capabilities are explicitly **OUT OF SCOPE** for Version 1:
+
+1. **No Autonomous Payment Collection**: Payments remain offline/manual via merchant payment links.
+2. **No Autonomous Refunds or Cancellations**: Refund queries must route 100% to human staff.
+3. **No Autonomous Price Discounts**: Unapproved bargaining or price reduction requests route 100% to human staff.
+4. **No Medical, Banking, Credit, or Financial Decisions**: Regulated industry logic is deferred to future releases.
+5. **No Multi-Industry Implementation in V1**: Only Apparel Retail is active in Version 1.
+6. **No Visual Multimodal Image Search**: Visual search is deferred to V2.
+
+---
+
+## 7. Pilot Execution & Progressive Rollout Modes
+
+To eliminate operational risk, Version 1 deploys through three progressive operating modes:
+
+1. **Mode 1: Shadow Mode (Days 1–3)**
+   * System receives WhatsApp messages, executes retrieval and decision engine logic, and generates drafts in the background.
+   * **Zero AI messages are sent to customers.** Staff responses are compared against AI drafts to calculate accuracy, intent recall, and identify edge cases.
+
+2. **Mode 2: Human-Approval Mode (Days 4–14)**
+   * System generates draft replies in real-time.
+   * Merchant staff receive notifications, review drafts in the dashboard inbox, edit if needed, and click **Approve & Send**.
+
+3. **Mode 3: Autonomous Mode for Low-Risk Queries (Post-Pilot Gate)**
+   * Deployed only after proving 99%+ price/stock accuracy and 100% escalation recall in Stage 2.
+   * Auto-responds ONLY to standard catalog availability and FAQ queries. All exception queries remain locked in Human-Approval mode.

@@ -1,60 +1,82 @@
 # Closely AI - Product Validation & Verification Plan
 
-## Part 1: Critical Strategic Review
-
-### 1. Three Critical Assumptions Most Likely to be Wrong
-1. **Catalog Maintenance Feasibility**: Assuming boutique owners maintain or will regularly update a structured product catalog (CSV/SQL database). In reality, local boutiques have high stock turnover and often track inventory solely via physical inspection and smartphone galleries.
-2. **Autonomous Checkout Completion**: Assuming retail customers are comfortable completing high-ticket apparel purchases (e.g., silk sarees costing $50–$300) with a chatbot. Shoppers heavily prioritize human connection, video-call verification of the fabric drape, and personalized trust building.
-3. **Dashboard Engagement**: Assuming mobile-first boutique owners will actively log into a separate web-based merchant dashboard to manage queues. If the notification does not arrive on WhatsApp or SMS, the merchant will miss it.
-
-### 2. Feature of Highest Customer Value
-* **Instant Conversational Catalog Search & Availability Matching**: Answering the immediate question *"Do you have this saree in stock?"* in under 2 seconds. Preventing lead drop-off during the first 60 seconds of shopper intent has the highest direct correlation to conversion.
-
-### 3. Feature Unnecessary for Version 1 MVP
-* **Gemini-powered Multimodal Visual Product Search**: Allowing customers to upload photos of sarees to match catalog SKUs is technically complex and high-risk. MVP discovery can be solved cleanly with text search and categorical filters.
-
-### 4. Riskiest Technical Decision
-* **PostgreSQL Session-Scoped Row-Level Security (RLS)**: Setting `SET LOCAL app.current_tenant` on database connection pools. In multi-threaded or async environments, any failure to correctly clear, reset, or set these variables under RLS poses a severe risk of cross-tenant data exposure.
-
-### 5. The "Concierge" Manual Version (Fastest Sell)
-* **Human-in-the-Loop Copywriter**: Set up a shared Google Sheet catalog. When a customer messages the merchant, the query is forwarded to the founder (you) via a private Slack channel. You manually look up the sheet, write a grounded draft, and send it to the merchant to copy-paste.
-
-### 6. First Customer Niche to Interview
-* **Boutique Silk Saree Retailers in Dharmavaram & Kanchipuram**: Mobile-first, micro-manufacturers who run active Instagram accounts and manage 50–150 inbound sales chats per day on WhatsApp.
-
-### 7. Exact Measurable Result of the MVP
-* **Reduce initial response latency from ~4 hours to under 3 seconds**, generating a **minimum 25% increase in captured order intent** during a 14-day customer pilot.
+> [!IMPORTANT]
+> **Core Principle**: Do not confuse a visually impressive prototype with a validated product. Validate through empirical pilot metrics and customer willingness to pay before writing production code.
 
 ---
 
-## Part 2: One-Page Validation Plan
+## Part 1: Strategic Validation Hypotheses
+
+Rather than treating assumptions as established facts, Closely AI measures success against six core hypotheses:
+
+* **H1 (Inquiry Volume)**: At least 3 of 5 interviewed boutiques receive 50+ WhatsApp inquiries daily.
+* **H2 (Response Latency Impact)**: At least 3 of 5 boutiques report that delayed replies directly cause lost or abandoned sales opportunities.
+* **H3 (Response Latency Reduction)**: During the pilot, Closely AI reduces median first-response time from the merchant's manual baseline to below 60 seconds (with human approval).
+* **H4 (Deterministic Accuracy)**: In the approved test dataset, Closely AI uses deterministic validation to prevent unsupported price, stock, and policy claims (achieving ≥99% accuracy on applicable queries).
+* **H5 (Qualified Intent Capture)**: During the pilot, the merchant confirms that Closely AI increases qualified order intents compared with the baseline period.
+* **H6 (Commercial Willingness to Pay)**: At least one merchant agrees to continue with a paid pilot after the 14-day trial.
+
+---
+
+## Part 2: Product Quality & Acceptance Criteria
+
+| Area | Requirement / Target | Verification Method |
+|---|---|---|
+| **Price Correctness** | **100%** | Deterministic SQL database lookup assertion |
+| **Stock Correctness** | **100%** | Live inventory snapshot cross-check |
+| **Unsupported Product Claims** | **0** | RAG golden dataset evaluation suite (`n=200`) |
+| **Escalation Recall** | **100%** | Automated test suite covering discounts, refunds, and complaints |
+| **Intent Classification Accuracy** | **≥95%** | Benchmark test on golden dataset |
+| **Draft-Generation Latency (Simple Queries)** | **<3.0 seconds** | Telemetry tracking from webhook arrival to draft ready in dashboard |
+| **p95 Latency** | Tracked separately for complex & human-approval flows | System telemetry logs |
+
+---
+
+## Part 3: Baseline vs. Pilot Comparison Framework
+
+To empirically evaluate pilot impact, the 14-day trial tracks explicit before-and-after metrics:
+
+```mermaid
+graph LR
+    A[Baseline Phase 7 Days: Manual Handset Processing] --> B[Shadow Mode Days 1-3: Accuracy & Eval Calibration]
+    B --> C[Human-Approval Pilot Days 4-14: Copilot Draft Review]
+    C --> D[Empirical Metric Comparison & Gate Approval]
+```
+
+### Metrics Tracked
+1. **Response Latency**: Baseline manual response time vs. Copilot draft-assisted response time (median and p95).
+2. **Inquiry Volume & Qualified Order Intent**: Total incoming chat leads vs. conversations reaching order intent stage.
+3. **Escalation & Intervention Volume**: Number of queries routed to `WAITING_APPROVAL` or `HUMAN_AGENT`.
+4. **Draft Accuracy & Rejection Rate**: Number of copilot drafts approved without changes vs. edited/rejected drafts.
+5. **Merchant Time Saved**: Weekly hours spent messaging by store staff before vs. during copilot usage.
+6. **Customer Feedback & Abandonment Rate**: Number of abandoned chat threads (>1 hour inactivity) and customer complaints.
+
+---
+
+## Part 4: One-Page Actionable Validation Plan
 
 ```mermaid
 graph TD
-    A[Identify Beachhead Merchants] --> B[Catalog Ingestion Check]
-    B --> C[Manual Concierge Phase]
-    C --> D[Integrate Sandbox API]
-    D --> E[Run 14-Day Pilot]
-    E --> F[Measure Latency & Order Intent]
+    Stage1[Stage 1: Customer Discovery & Baseline Tracking Days 1-3] --> Stage2[Stage 2: RLS Security & Shadow Mode Calibration Days 4-7]
+    Stage2 --> Stage3[Stage 3: 14-Day Human-Approval Pilot Days 8-21]
+    Stage3 --> Stage4[Stage 4: Pilot Metric Evaluation & Commercial Gate]
 ```
 
-### Stage 1: Customer Discovery & Manual Validation (Days 1–3)
-* **Goal**: Verify if boutique owners can provide a structured list of SKUs and if they will trust an assistant to draft answers.
-* **Process**: Interview 5 boutique owners. Have them share their current WhatsApp chat history and their inventory format (photos, diary entries, or spreadsheets).
-* **Success Criteria**: At least 3 owners can provide an inventory sheet with prices and are willing to use a helper tool to auto-respond.
+### Stage 1: Customer Discovery & Baseline Tracking (Days 1–3)
+* **Goal**: Verify catalog readiness and capture baseline response metrics.
+* **Process**: Interview 5 apparel boutique owners in Dharmavaram/Kanchipuram. Analyze 7 days of historical WhatsApp chat logs to measure manual response latency and inquiry volume.
+* **Gate Criteria**: At least 3 merchants provide structured catalog data and report response delay bottlenecks.
 
-### Stage 2: Webhook & AI Grounding Validation (Days 4–7)
-* **Goal**: Validate that the RLS context bypass and NLU decision engine reliably route policy exceptions to the human approval queue.
-* **Process**: Connect the sandbox phone number to a staging server. Send 50 test messages covering:
-  - Valid catalog inquiries.
-  - Bargaining queries (e.g. *"Konchem thagginchandi"*).
-  - Out-of-stock items.
-* **Success Criteria**: 100% of out-of-stock and negotiation queries are intercepted and set to `WAITING_APPROVAL` status; 0% of valid in-stock inquiries fail.
+### Stage 2: RLS Security & Shadow Mode Calibration (Days 4–7)
+* **Goal**: Validate RLS concurrency security, worker context propagation, and draft accuracy.
+* **Process**: Run 50-thread concurrent RLS security test suite (tenant isolation enforced by RLS and verified through concurrency tests). Execute Closely AI in **Shadow Mode** on live incoming message logs (0 messages sent to customers).
+* **Gate Criteria**: 100% RLS test pass rate; zero cross-tenant leaks; ≥95% intent accuracy and 100% price/stock correctness on shadow drafts.
 
-### Stage 3: Live Pilot & Metric Ingestion (Days 8–14)
-* **Goal**: Run a live sales assistant pilot with 1 boutique.
-* **Process**: Verify the permanent WhatsApp Business API number (after Meta rate-limit lifts) and run Closely AI in `WAITING_APPROVAL` mode (where all responses are drafts waiting for merchant approval before sending).
-* **Success Criteria**: 
-  - Median merchant response time drops under 30 seconds.
-  - Customer order intent increases by >=25% compared to the previous week's manual history.
-  - Zero false price promises are dispatched to customers.
+### Stage 3: 14-Day Human-Approval Live Pilot (Days 8–21)
+* **Goal**: Execute live copilot pilot with proposed pilot merchant *Pushpalatha Silks*.
+* **Process**: Enable dashboard draft notifications (<3s draft-generation latency). Merchant staff review and click **Approve & Send** on generated copilot responses. Bargaining, refunds, and complaints lock 100% in human queue.
+* **Gate Criteria**:
+  1. Median customer response time drops below 60 seconds.
+  2. Qualified order intents increase compared to baseline.
+  3. Zero ungrounded pricing or stock claims dispatched to customers.
+  4. Merchant agrees to paid pilot continuation.

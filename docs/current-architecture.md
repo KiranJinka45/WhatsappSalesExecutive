@@ -1,93 +1,149 @@
-# Closely AI - Current System Architecture
+# Closely AI - Current System Architecture & Security Blueprint
 
-## 1. Database Schema & Multi-Tenant Design
-Closely AI uses a single PostgreSQL database with schema-enforced Row-Level Security (RLS) to separate tenants.
+> [!IMPORTANT]
+> **Security Guardrail**: Tenant isolation is enforced by RLS and verified through concurrency tests and background worker context propagation prior to onboarding merchants.
 
-### Schema Relationships
+---
+
+## 1. Multi-Tenant Architecture & Database Schema
+
+Closely AI uses PostgreSQL with schema-enforced Row-Level Security (RLS) to provide multi-tenant data separation.
+
+```
++-----------------------------------------------------------------------------------+
+|                                Closely AI Backend                                 |
+|                                                                                   |
+|  +-----------------------------------+     +-----------------------------------+  |
+|  |     Horizontal Core Platform      |     |     Apparel Retail Module (V1)    |  |
+|  |                                   |     |                                   |  |
+|  |  - Auth & RBAC (Security/JWT)     |     |  - Products & SKUs                |  |
+|  |  - Tenant Context Manager (RLS)   |     |  - Stock & Price Snapshots        |  |
+|  |  - Webhook Ingestion Router       |     |  - Catalog Hybrid Search          |  |
+|  |  - Decision Engine & Guardrails   |     |  - Order Intent Schema            |  |
+|  |  - Human Approval Queue & SSE     |     |  - Retail Policy FAQs             |  |
+|  |  - Decision Audit Logger          |     |                                   |  |
+|  +-----------------------------------+     +-----------------------------------+  |
++-----------------------------------------------------------------------------------+
+```
+
+### Table Definitions & RLS Rules
+
 ```mermaid
 erDiagram
     ORGANIZATIONS ||--o{ USERS : "has"
     ORGANIZATIONS ||--o{ PRODUCTS : "owns"
     ORGANIZATIONS ||--o{ CONVERSATIONS : "engages"
     CONVERSATIONS ||--o{ MESSAGES : "contains"
-    ORGANIZATIONS ||--o{ ORDERS : "collects"
-    ORDERS ||--o{ ORDER_ITEMS : "has"
+    ORGANIZATIONS ||--o{ DECISION_AUDIT_LOGS : "audits"
 ```
 
-### Table Definitions & RLS Policies
 1. **organizations**:
-   - Fields: `id (UUID)`, `name`, `whatsapp_number`, `whatsapp_phone_number_id`, `whatsapp_business_account_id`, `whatsapp_access_token`, `shipping_policy`, `return_policy`, `discount_limit`.
-   - **RLS Policy**: `current_tenant == organization_id OR db.is_admin == True` (allows global read lookup only to administrative tasks like incoming webhook matching).
-2. **users**:
-   - Fields: `id (UUID)`, `organization_id`, `email`, `hashed_password`, `role (owner/agent)`.
-   - **RLS Policy**: Access restricted to logged-in user's `organization_id`.
-3. **products**:
-   - Fields: `id (UUID)`, `organization_id`, `sku`, `name`, `price`, `stock_count`, `category`, `size`, `color`, `fabric`, `image_url`.
-   - **RLS Policy**: Reads/Writes restricted to `organization_id`.
-4. **conversations**:
-   - Fields: `id (UUID)`, `organization_id`, `customer_phone`, `customer_name`, `status (AI_ACTIVE / WAITING_APPROVAL / HUMAN_AGENT)`.
-   - **RLS Policy**: Restricted to `organization_id`.
-5. **messages**:
-   - Fields: `id (UUID)`, `conversation_id`, `sender (customer / system_ai / agent)`, `content`, `status (delivered / pending_approval)`, `multimedia_url`.
-   - **RLS Policy**: Enforced via joining conversation parent table.
+   - Stores tenant configuration, WhatsApp credentials, and merchant policy text.
+   - **RLS Rule**: Accessible only when `id == current_setting('app.current_tenant')` or via explicit admin bypass function.
+2. **products**:
+   - Stores SKUs, names, prices, stock counts, categories, sizes, colors, and fabric details.
+   - **RLS Rule**: Enforced by `organization_id == current_setting('app.current_tenant')`.
+3. **conversations**:
+   - Tracks chat sessions and status (`AI_ACTIVE`, `WAITING_APPROVAL`, `HUMAN_AGENT`).
+   - **RLS Rule**: Enforced by `organization_id == current_setting('app.current_tenant')`.
+4. **messages**:
+   - Stores inbound customer messages and AI/staff drafts.
+   - **RLS Rule**: Enforced via parent conversation `organization_id`.
+5. **decision_audit_logs**:
+   - Append-only audit table logging intent classifications, extracted entities, generated drafts, merchant edits, and approval timestamps.
+   - **RLS Rule**: Enforced by `organization_id == current_setting('app.current_tenant')`.
 
 ---
 
-## 2. Webhook Ingestion Pipeline Flowchart
-The following diagram illustrates how an incoming WhatsApp message is verified, authenticated, saved, and processed by the AI in the background:
+## 2. PostgreSQL RLS Security & Background Worker Test Plan
+
+Tenant isolation is enforced by RLS and verified through concurrency tests. The system implements six strict architectural controls:
+
+```
+Request / Worker Execution Boundary
+      │
+      ▼
+1. Begin Explicit Database Transaction
+      │
+      ▼
+2. SET LOCAL app.current_tenant = '<validated_org_id>'
+      │
+      ▼
+3. Execute Queries (Postgres RLS blocks cross-tenant access)
+      │
+      ▼
+4. Commit / Rollback Transaction
+      │
+      ▼
+5. RESET app.current_tenant (Prevents connection pool contamination)
+```
+
+### Verification Checklist & Test Matrix
+1. **Explicit Transaction Scoping**: Every request and worker task opens a transaction block, executes `SET LOCAL app.current_tenant`, and commits/rolls back cleanly.
+2. **Connection Pool Cleanup**: On connection return to the pool, `RESET app.current_tenant` is enforced by connection pool middleware.
+3. **Background Worker Context Propagation**: Async background jobs (Redis/Celery) receive `organization_id` explicitly in the job payload and set database session context prior to fetching message history.
+4. **Audited Admin Paths**: Administrative lookups (e.g. initial webhook matching by `phone_number_id`) execute through a dedicated, audited database session with explicit admin logging.
+5. **Concurrent Async RLS Test Suite**:
+   - Automated pytest suite spawns 50 concurrent requests representing 5 distinct tenant IDs.
+   - Asserts zero cross-tenant reads or writes under heavy async concurrency.
+6. **Log Sanitization**: Logs output trace IDs and scrub customer phone numbers, access tokens, and cross-tenant metadata.
+
+---
+
+## 3. Webhook Ingestion & Copilot Draft Pipeline
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor Customer
-    participant Meta as Meta Webhooks
-    participant WebhookAPI as Webhooks Router
-    participant Queue as Redis Queue (Celery/RQ)
-    participant Worker as Async Worker
-    participant LLM as LLM Orchestrator
-    database DB as Supabase Postgres
-    participant SSE as Dashboard (SSE)
+    participant Meta as Meta WhatsApp Cloud API
+    participant Webhook as Webhook API Endpoint
+    participant Queue as Redis Job Queue
+    participant Worker as Async Copilot Worker
+    participant DB as PostgreSQL (RLS Enforced)
+    participant Dashboard as Merchant Dashboard (SSE)
 
-    Customer->>Meta: Sends Message
-    Meta->>WebhookAPI: POST /api/webhooks/whatsapp (Unauthenticated)
-    note over WebhookAPI: Temporarily elevate privileges (SET LOCAL RLS bypass)
-    WebhookAPI->>DB: Query Organization by phone_number_id
-    DB-->>WebhookAPI: Returns Org (tenant resolved)
-    WebhookAPI->>DB: Save Customer Message & Create/Update Conversation
-    WebhookAPI->>SSE: Broadcast "new_message" (SSE stream)
-    WebhookAPI->>Queue: Enqueue Async Processing Job
-    WebhookAPI-->>Meta: Returns 200 OK (Avoids Meta retries)
+    Customer->>Meta: Sends WhatsApp Message
+    Meta->>Webhook: POST /api/webhooks/whatsapp (Unauthenticated Inbound)
+    note over Webhook: Admin session resolves org by phone_number_id
+    Webhook->>DB: Save Customer Message & Set Status = WAITING_APPROVAL
+    Webhook->>Dashboard: Broadcast "new_message" via SSE
+    Webhook->>Queue: Enqueue Copilot Draft Job {org_id, conv_id}
+    Webhook-->>Meta: Returns 200 OK (<200ms)
 
-    note over Worker: Background processing
-    Queue->>Worker: Executes job
-    Worker->>DB: Fetch last 10 messages for context
-    Worker->>Worker: Classify intent and extract entities
-    Worker->>DB: Search products and policies
-    Worker->>LLM: Generate response prompt (grounded in results)
-    LLM-->>Worker: Returns AI Response Draft
-    alt Conversation Status is AI_ACTIVE
-        Worker->>DB: Save response message as "system_ai"
-        Worker->>Meta: POST /messages (dispatch WhatsApp reply)
-        Worker->>SSE: Broadcast "new_message" (AI response)
-    else Conversation Status is WAITING_APPROVAL
-        Worker->>DB: Save response message as "pending_approval"
-        Worker->>SSE: Broadcast "draft_proposed" to merchant
-    end
+    note over Worker: Async Draft Generation (<3s Draft Latency)
+    Queue->>Worker: Pick up job
+    Worker->>DB: Begin TX & SET LOCAL app.current_tenant = org_id
+    Worker->>DB: Query live catalog & policies
+    Worker->>Worker: Intent Classification & Grounded Draft Generation
+    Worker->>DB: Save Draft Response to messages table
+    Worker->>Dashboard: Broadcast "draft_ready" via SSE
+    Worker->>DB: Commit TX & RESET app.current_tenant
+
+    note over Dashboard: Merchant Approval Action
+    Dashboard->>Webhook: Merchant clicks "Approve & Send"
+    Webhook->>Meta: POST /messages (Dispatch to Customer)
+    Webhook->>DB: Update Message Status = DELIVERED
 ```
 
 ---
 
-## 3. LLM Orchestrator Fallback Engine
-To prevent downtime when external LLM providers fail, the `Orchestrator` implements a hierarchical fallback chain:
+## 4. Pilot Rollback Plan & Incident-Response Procedure
 
-```mermaid
-graph TD
-    A[Groq / Llama-3.1-70b-versatile] -- Timeout / 429 --> B[Gemini / gemini-1.5-pro]
-    B -- Timeout / 429 / 500 --> C[OpenAI / gpt-4o-mini]
-    C -- Timeout / 429 / 500 --> D[Deterministic Local Rule Grounding Fallback]
-```
+### Pilot Rollback Protocol (Emergency Kill-Switch)
+If an unexpected failure or data issue occurs during a live pilot:
 
-1. **Primary Provider (Groq)**: Offers fast response times (< 800ms) suitable for low latency chat.
-2. **Secondary Provider (Gemini)**: Leveraged if Groq is overloaded, rate-limited, or fails.
-3. **Tertiary Provider (OpenAI)**: Tertiary fallback to ensure high availability.
-4. **Offline Rule Grounding**: If all API providers are unreachable, the system automatically falls back to a template-based responder using local product availability metadata (e.g. *"Our Cotton Sarees are available at Rs. 2,500. Let me check with our manager to help you buy."*), bypassing all AI APIs.
+1. **Trigger Condition**:
+   - Any pricing discrepancy dispatched to a customer.
+   - Any cross-tenant data access attempt.
+   - Unhandled error rate >5% over 15 minutes.
+2. **Execution Steps**:
+   - **Step 1 (Silence AI)**: Merchant or administrator clicks **Emergency Disable AI** in settings or executes API kill-switch `POST /api/pilot/killswitch`.
+   - **Step 2 (Status Override)**: Database sets all active conversations for the tenant to `HUMAN_AGENT`.
+   - **Step 3 (Manual Fallback)**: Merchant staff take over conversations directly via WhatsApp Web or phone handset.
+   - **Step 4 (Post-Mortem & Fix)**: Developer team isolates logs using trace IDs, updates test suite with regression cases, and verifies fix before re-enabling copilot.
+
+### Incident Severity Levels
+* **SEV-1 (Critical - Immediate Shutdown)**: Cross-tenant data exposure or incorrect price promise dispatched to customer. *Action: Immediate kill-switch activation, root cause analysis.*
+* **SEV-2 (High - Fallback to Human Approval)**: Telemetry draft-generation latency >10s or draft service degradation. *Action: Pause auto-draft notifications, rely on staff manual typing.*
+* **SEV-3 (Low - Non-Blocking)**: Minor UI dashboard glitch or non-critical metric logging delay. *Action: Resolve in standard patch cycle.*
