@@ -10,6 +10,7 @@ env_file_path = f".env.{app_env}" if os.path.exists(f".env.{app_env}") else ".en
 class Settings(BaseSettings):
     APP_ENV: str = "development"
     TESTING: bool = False
+    SHADOW_MODE: bool = True
     DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/closely_db"
     # LLM Provider Keys
     GEMINI_API_KEY: str = ""

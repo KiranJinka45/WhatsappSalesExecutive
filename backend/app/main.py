@@ -4,7 +4,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from .database import engine, Base, request_id_var, SessionLocal
-from .routers import auth, catalog, brand, conversations, webhooks, health, analytics
+from .routers import auth, catalog, brand, conversations, webhooks, health, analytics, approvals
 from sqlalchemy import text
 from .config import settings
 import logging
@@ -36,44 +36,60 @@ logging.basicConfig(level=logging.INFO, handlers=[handler], force=True)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Initialize pgvector extension in Postgres dynamically
-    try:
-        with engine.connect() as conn:
-            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
-            conn.commit()
-    except Exception as e:
-        print(f"Failed to create pgvector extension: {e}. If using SQLite, this is normal and will be skipped.")
+    # In testing and production, schema is managed cleanly by migrations/test fixtures.
+    # Lifespan dynamic DDL is only needed as a convenience fallback in local development.
+    if os.environ.get("TESTING") != "true" and getattr(settings, "APP_ENV", "production") == "development":
+        # Initialize pgvector extension in Postgres dynamically
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+                conn.commit()
+        except Exception as e:
+            logger.debug(f"pgvector extension check skipped: {e}")
 
-    # Initialize Database tables
-    try:
-        Base.metadata.create_all(bind=engine)
-    except Exception as e:
-        print(f"Failed to create database tables on startup: {e}. Tables may already exist in production (Supabase).")
+        # Initialize Database tables
+        try:
+            Base.metadata.create_all(bind=engine)
+        except Exception as e:
+            logger.debug(f"Base.metadata.create_all skipped: {e}")
     
-    # Fail-safe to add detected_language column if it doesn't exist
-    try:
-        with engine.connect() as conn:
-            conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS detected_language VARCHAR(50);"))
-            conn.execute(text("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS whatsapp_business_account_id VARCHAR(100);"))
-            conn.execute(text("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS whatsapp_phone_number_id VARCHAR(100);"))
-            conn.execute(text("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS whatsapp_access_token TEXT;"))
-            conn.execute(text("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS is_whatsapp_connected INTEGER DEFAULT 0;"))
-            conn.execute(text("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS policies JSONB DEFAULT '{}';"))
-            conn.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS image_embedding vector(3072);"))
-            conn.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS image_embedding_status VARCHAR(50) DEFAULT 'pending';"))
-            
-            # Optimized indexes for multi-tenant query routing and joins
-            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_users_org_id ON users(organization_id);"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_categories_org_id ON categories(organization_id);"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_customer_memories_org_phone ON customer_memories(organization_id, customer_phone);"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_orders_org_phone ON orders(organization_id, customer_phone);"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_approval_requests_org_id ON approval_requests(organization_id);"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_notifications_org_status ON notifications(organization_id, status);"))
-            
-            conn.commit()
-    except Exception as e:
-        print(f"Altering database tables or creating indexes failed: {e}. If using SQLite, this is normal.")
+        # Fail-safe to add detected_language column if it doesn't exist
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS detected_language VARCHAR(50);"))
+                conn.execute(text("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS whatsapp_business_account_id VARCHAR(100);"))
+                conn.execute(text("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS whatsapp_phone_number_id VARCHAR(100);"))
+                conn.execute(text("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS whatsapp_access_token TEXT;"))
+                conn.execute(text("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS is_whatsapp_connected INTEGER DEFAULT 0;"))
+                conn.execute(text("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS policies JSONB DEFAULT '{}';"))
+                conn.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS image_embedding vector(3072);"))
+                conn.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS image_embedding_status VARCHAR(50) DEFAULT 'pending';"))
+                
+                # Optimized indexes for multi-tenant query routing and joins
+                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_users_org_id ON users(organization_id);"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_categories_org_id ON categories(organization_id);"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_customer_memories_org_phone ON customer_memories(organization_id, customer_phone);"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_orders_org_phone ON orders(organization_id, customer_phone);"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_approval_requests_org_id ON approval_requests(organization_id);"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_notifications_org_status ON notifications(organization_id, status);"))
+                
+                # Milestone 4 Approval & Audit DDL
+                conn.execute(text("ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS approved_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL;"))
+                conn.execute(text("ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS edited_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL;"))
+                conn.execute(text("ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS edited_response TEXT;"))
+                conn.execute(text("ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS message_hash VARCHAR(64);"))
+                conn.execute(text("ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1;"))
+                conn.execute(text("ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS price_snapshot JSONB DEFAULT '{}';"))
+                conn.execute(text("ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS stock_snapshot JSONB DEFAULT '{}';"))
+                conn.execute(text("ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;"))
+                conn.execute(text("ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ;"))
+                conn.execute(text("ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS error_message TEXT;"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_approval_audit_logs_org ON approval_audit_logs(organization_id);"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_approval_audit_logs_req ON approval_audit_logs(approval_request_id);"))
+                conn.commit()
+        except Exception as e:
+            logger.debug(f"Manual index/column ensure skipped: {e}")
 
     # Start Redis Worker in a daemon background thread for queue processing
     worker_instance = None
@@ -223,6 +239,7 @@ app.include_router(catalog.router)
 app.include_router(brand.router)
 app.include_router(conversations.router)
 app.include_router(webhooks.router)
+app.include_router(approvals.router)
 app.include_router(health.router)
 app.include_router(analytics.router)
 

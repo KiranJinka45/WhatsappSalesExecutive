@@ -10,15 +10,50 @@ def send_whatsapp_message(
     to_phone: str,
     content: str,
     org: models.Organization,
-    media_url: Optional[str] = None
+    media_url: Optional[str] = None,
+    from_approval: bool = False
 ) -> Dict[str, Any]:
     """
     Dispatches outbound message to customer via WhatsApp BSP.
-    Uses organization-specific token/id if stored in policies,
-    otherwise falls back to global settings or mock delivery for sandbox tests.
+    - If emergency_kill_switch is True: 100% suppressed and returns kill_switch_active.
+    - In SHADOW_MODE: outbound delivery is 100% suppressed and logged internally.
+    - In HUMAN_APPROVAL mode: outbound delivery is permitted ONLY if from_approval=True.
     """
-    # 1. Fetch credentials (tenant-specific or global fallback)
     policies = org.policies or {}
+    clean_phone = "".join([c for c in to_phone if c.isdigit()])
+
+    # 0a. Emergency Kill Switch Guardrail
+    if policies.get("emergency_kill_switch") is True:
+        logger.warning(f"[KILL SWITCH ACTIVE] Outbound WhatsApp message to {clean_phone} for org {org.id} halted.")
+        return {
+            "status": "kill_switch_active",
+            "error": "Emergency kill switch is currently active for this organization",
+            "mock": False
+        }
+
+    # 0b. Pilot Operating Mode & Shadow Mode Guardrails
+    operating_mode = policies.get("operating_mode", "SHADOW")
+    is_shadow = getattr(settings, "SHADOW_MODE", True) or policies.get("shadow_mode", True)
+
+    if not from_approval:
+        # Autonomous pipeline sending is suppressed in shadow mode OR human approval mode
+        if is_shadow or operating_mode == "HUMAN_APPROVAL":
+            logger.info(f"[GUARDRAIL] Autonomous message to {clean_phone} suppressed (mode={operating_mode}, shadow={is_shadow}). Draft logged internally.")
+            return {
+                "status": "shadow_mode_suppressed",
+                "message_id": f"shadow-draft-{clean_phone}-{org.id}",
+                "mock": True
+            }
+    else:
+        # Outbound initiated via verified Human Approval
+        if is_shadow and operating_mode != "HUMAN_APPROVAL" and policies.get("shadow_mode", True):
+            logger.info(f"[SHADOW MODE GUARDRAIL] Approved draft to {clean_phone} suppressed in pure shadow mode.")
+            return {
+                "status": "shadow_mode_suppressed",
+                "message_id": f"shadow-draft-{clean_phone}-{org.id}",
+                "mock": True
+            }
+
     token = policies.get("whatsapp_access_token") or getattr(settings, "WHATSAPP_ACCESS_TOKEN", None)
     phone_id = policies.get("whatsapp_phone_number_id") or getattr(settings, "WHATSAPP_PHONE_NUMBER_ID", None)
     
@@ -123,6 +158,13 @@ def send_whatsapp_message(
                 "error": response.text,
                 "mock": False
             }
+    except httpx.TimeoutException as e:
+        logger.error(f"Network timeout during WhatsApp API call to {clean_phone}: {e}")
+        return {
+            "status": "unknown_timeout",
+            "error": f"Network timeout during provider dispatch: {e}",
+            "mock": False
+        }
     except Exception as e:
         logger.error(f"Exception during WhatsApp API request: {e}", exc_info=True)
         return {

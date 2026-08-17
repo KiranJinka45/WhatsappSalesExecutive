@@ -6,10 +6,21 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from .config import settings
-from .database import get_db, tenant_var
+from .database import get_db, tenant_var, log_admin_access
 from . import models
 
 from fastapi import Request
+
+def mask_sensitive_data(val: Optional[str]) -> str:
+    """
+    Sanitizes phone numbers, Bearer tokens, and secrets from application logs.
+    """
+    if not val:
+        return ""
+    s_val = str(val).strip()
+    if len(s_val) <= 6:
+        return "***REDACTED***"
+    return f"{s_val[:3]}****{s_val[-3:]}"
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login", auto_error=False)
 
@@ -69,12 +80,18 @@ def get_current_user(token: str = Depends(get_token), db: Session = Depends(get_
         
     # Query without tenant restriction first to authenticate the user
     db.is_admin = True
+    log_admin_access("user_authentication_lookup", {"user_id": mask_sensitive_data(user_id)})
     try:
-        user = db.query(models.User).filter(models.User.id == user_id).first()
+        from sqlalchemy import text
+        from sqlalchemy.orm import joinedload
+        import uuid as _uuid
+        db.execute(text("SET LOCAL app.current_tenant = ''"))
+        user_uuid = _uuid.UUID(str(user_id)) if not isinstance(user_id, _uuid.UUID) else user_id
+        user = db.query(models.User).options(joinedload(models.User.organization)).filter(models.User.id == user_uuid).first()
     finally:
         db.is_admin = False
         
-    if user is None or user.organization is None:
+    if user is None or user.organization_id is None or (user.organization and user.organization.deleted_at is not None):
         raise credentials_exception
         
     # Set both context variable and session attribute
@@ -82,16 +99,27 @@ def get_current_user(token: str = Depends(get_token), db: Session = Depends(get_
     db.organization_id = user.organization_id
     # Force the local variable update in PostgreSQL immediately to enforce RLS
     from sqlalchemy import text
-    db.execute(text("SET LOCAL app.current_tenant = :org_id"), {"org_id": str(user.organization_id)})
+    try:
+        db.execute(text("SET LOCAL app.current_tenant = :org_id"), {"org_id": str(user.organization_id)})
+    except Exception:
+        pass
     return user
 
-def get_current_org(current_user: models.User = Depends(get_current_user)) -> models.Organization:
+def get_current_org(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)) -> models.Organization:
     if not current_user.organization_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User does not belong to any organization"
         )
-    return current_user.organization
+    if current_user.organization and current_user.organization.deleted_at is None:
+        return current_user.organization
+    org = db.query(models.Organization).filter(
+        models.Organization.id == current_user.organization_id,
+        models.Organization.deleted_at.is_(None)
+    ).first()
+    if not org:
+        raise credentials_exception
+    return org
 
 def require_role(*allowed_roles: str):
     def role_checker(current_user: models.User = Depends(get_current_user)) -> models.User:
@@ -102,3 +130,4 @@ def require_role(*allowed_roles: str):
             )
         return current_user
     return role_checker
+

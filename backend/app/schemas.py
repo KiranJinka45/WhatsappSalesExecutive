@@ -89,7 +89,7 @@ class ProductBase(BaseModel):
     name: str
     gender: Optional[str] = None
     price: Decimal
-    color: str
+    color: Optional[str] = None
     fabric: Optional[str] = None
     description: Optional[str] = None
     sizes: List[str] = Field(default_factory=list)
@@ -150,7 +150,7 @@ class MessageCreate(BaseModel):
 class ConversationBase(BaseModel):
     customer_phone: str
     customer_name: Optional[str] = None
-    status: str  # 'AI_ACTIVE', 'WAITING_APPROVAL', 'OWNER_ACTIVE', 'CLOSED'
+    status: str  # 'AI_ACTIVE', 'WAITING_APPROVAL', 'HUMAN_TAKEOVER', 'CLOSED'
     assigned_user_id: Optional[UUID] = None
     metadata: Dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_", serialization_alias="metadata")
     lead_score: Optional[int] = 0
@@ -264,23 +264,70 @@ class ApprovalRequestOut(BaseModel):
     reason: str
     proposed_response: str
     ai_recommendation: Optional[str] = None
-    risk_score: int
+    risk_score: Optional[int] = 0
+    approved_by_user_id: Optional[UUID] = None
+    edited_by_user_id: Optional[UUID] = None
+    edited_response: Optional[str] = None
+    message_hash: Optional[str] = None
+    version: Optional[int] = 1
+    price_snapshot: Optional[Dict[str, Any]] = None
+    stock_snapshot: Optional[Dict[str, Any]] = None
+    expires_at: Optional[datetime] = None
+    sent_at: Optional[datetime] = None
+    error_message: Optional[str] = None
     llm_model: Optional[str] = None
     prompt_version: Optional[str] = None
-    retrieval_ids: List[str] = Field(default_factory=list)
-    grounding_score: Decimal = Decimal('0.00')
+    retrieval_ids: Optional[List[str]] = None
+    grounding_score: Optional[Decimal] = Decimal('0.00')
     decision_engine_version: Optional[str] = None
     rule_triggered: Optional[str] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_", serialization_alias="metadata")
-    created_at: datetime
-    updated_at: datetime
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, validation_alias="metadata_", serialization_alias="metadata")
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class ApprovalRequestRespond(BaseModel):
-    action: str  # 'approve', 'reject', 'edit'
+    action: str  # 'approve', 'edit_and_send', 'edit', 'reject', 'takeover', 'snooze'
     edited_response: Optional[str] = None
+    reason: Optional[str] = None
+
+
+class ApprovalActionRequest(BaseModel):
+    action: str  # 'approve', 'edit_and_send', 'reject', 'takeover', 'snooze'
+    edited_response: Optional[str] = None
+    reason: Optional[str] = None
+
+
+class ApprovalAuditLogOut(BaseModel):
+    id: UUID
+    organization_id: UUID
+    approval_request_id: Optional[UUID] = None
+    conversation_id: Optional[UUID] = None
+    user_id: Optional[UUID] = None
+    action: str
+    previous_status: Optional[str] = None
+    new_status: str
+    message_content: Optional[str] = None
+    message_hash: Optional[str] = None
+    revalidation_passed: Optional[bool] = True
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, validation_alias="metadata_", serialization_alias="metadata")
+    created_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class KillSwitchRequest(BaseModel):
+    active: bool
+    reason: Optional[str] = None
+
+
+class KillSwitchOut(BaseModel):
+    emergency_kill_switch: bool
+    operating_mode: str
+    updated_at: datetime
+    updated_by_user_id: Optional[UUID] = None
 
 
 # Notification

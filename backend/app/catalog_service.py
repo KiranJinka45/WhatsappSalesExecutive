@@ -16,10 +16,10 @@ class CatalogRow(BaseModel):
     sku: str = Field(..., min_length=1)
     name: str = Field(..., min_length=1)
     price: Decimal = Field(..., ge=0)
-    color: str = Field(..., min_length=1)
-    category_name: str = Field(..., min_length=2, max_length=50)
+    color: Optional[str] = Field(default=None)
+    category_name: str = Field(..., min_length=1, max_length=100)
     gender: str = Field(default="Unisex")
-    fabric: str = Field(..., min_length=1)
+    fabric: Optional[str] = Field(default=None)
     description: str = Field(default="")
     stock_count: int = Field(..., ge=0)
     sizes: List[str] = Field(default_factory=list)
@@ -157,12 +157,13 @@ def parse_and_sync_catalog(
     org_id: str, 
     file_content: bytes, 
     filename: str,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    mode: str = "atomic"
 ) -> dict:
     """
     Parses a CSV file with robust validation, uploads products,
     and schedules vector embedding updates asynchronously.
-    Rejects the entire file if any validation errors are found.
+    Supports 'atomic' (all-or-nothing) and 'partial' (skip invalid rows) import modes.
     """
     # 1. Validate File Size (Max 5MB)
     if len(file_content) > 5 * 1024 * 1024:
@@ -205,10 +206,16 @@ def parse_and_sync_catalog(
             normalized_header.append('image_urls')
         elif col_clean in ['video urls', 'video_urls', 'videos', 'video_url']:
             normalized_header.append('video_urls')
+        elif col_clean in ['size', 'sizes', 'product_size', 'product sizes', 'size list']:
+            normalized_header.append('sizes')
+        elif col_clean in ['color', 'colors', 'colour', 'colours']:
+            normalized_header.append('color')
+        elif col_clean in ['fabric', 'fabrics', 'material', 'materials']:
+            normalized_header.append('fabric')
         else:
             normalized_header.append(col_clean)
 
-    required_cols = ['sku', 'name', 'price', 'color', 'category', 'fabric', 'stock_count']
+    required_cols = ['sku', 'name', 'price', 'category', 'stock_count']
     missing_cols = [col for col in required_cols if col not in normalized_header]
     if missing_cols:
         raise ValueError(f"Missing required columns in CSV: {', '.join(missing_cols)}")
@@ -234,10 +241,10 @@ def parse_and_sync_catalog(
             'sku': (row.get('sku') or '').strip(),
             'name': (row.get('name') or '').strip(),
             'price': clean_price or None,
-            'color': (row.get('color') or '').strip(),
+            'color': (row.get('color') or '').strip() or None,
             'category_name': (row.get('category') or '').strip(),
             'gender': (row.get('gender') or 'Unisex').strip(),
-            'fabric': (row.get('fabric') or '').strip(),
+            'fabric': (row.get('fabric') or '').strip() or None,
             'description': (row.get('description') or '').strip(),
             'stock_count': (row.get('stock_count') or '').strip() or None,
             'sizes': (row.get('sizes') or '').strip(),
@@ -260,11 +267,14 @@ def parse_and_sync_catalog(
                 err_msgs.append(f"{loc}: {err['msg']}")
             errors.append(f"Row {idx}: {'; '.join(err_msgs)}")
 
-    if errors:
-        # Check if there is a negative price error to customize message
+    if errors and mode == "atomic":
+        # Check if there is a negative price or stock error to customize message
         price_errs = [e for e in errors if "price" in e.lower() and ("greater than or equal to 0" in e.lower() or "less than" in e.lower() or "negative" in e.lower())]
         if price_errs:
             raise ValueError("Price cannot be negative")
+        stock_errs = [e for e in errors if "stock" in e.lower() and ("greater than or equal to 0" in e.lower() or "negative" in e.lower())]
+        if stock_errs:
+            raise ValueError("Stock count cannot be negative")
         raise ValueError(f"Validation failed: {'; '.join(errors)}")
 
     products_created = 0

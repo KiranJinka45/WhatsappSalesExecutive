@@ -69,9 +69,6 @@ def do_orm_execute_tenant_filter(orm_execute_state):
             )
             
     org_id = getattr(session, "organization_id", None) or tenant_var.get()
-    if org_id is None:
-        import uuid
-        org_id = uuid.UUID("00000000-0000-0000-0000-000000000000")
     
     if org_id is not None:
         import uuid
@@ -105,11 +102,36 @@ def do_orm_execute_tenant_filter(orm_execute_state):
     if options:
         orm_execute_state.statement = orm_execute_state.statement.options(*options)
 
+@event.listens_for(engine, "checkin")
+def reset_tenant_on_checkin(dbapi_connection, connection_record):
+    """
+    Guarantees that when a connection is returned to the pool,
+    any session-scoped app.current_tenant variable is reset to prevent pool pollution.
+    """
+    try:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("RESET app.current_tenant;")
+        dbapi_connection.commit()
+        cursor.close()
+    except Exception:
+        pass
+
+def log_admin_access(action: str, details: dict):
+    """
+    Logs administrative privilege elevation (is_admin=True) to audit logs.
+    """
+    logger.info(f"[ADMIN_AUDIT] Action: {action} | Details: {details}")
+
 def get_db():
     db = SessionLocal()
     db.organization_id = None
     try:
         yield db
     finally:
+        try:
+            from sqlalchemy import text
+            db.execute(text("RESET app.current_tenant"))
+        except Exception:
+            pass
         db.close()
 
