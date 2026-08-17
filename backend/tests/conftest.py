@@ -5,9 +5,13 @@ Centralizes database setup, dependency overrides, and common helpers.
 import os
 import sys
 
-# Resolve DATABASE_URL: prefer env var, fall back to docker-compose port 5434
-if "DATABASE_URL" not in os.environ:
-    os.environ["DATABASE_URL"] = "postgresql://postgres:postgres@localhost:5434/closely_db_test"
+# Always force DATABASE_URL to closely_db_test for test suite runs
+db_user = os.environ.get("POSTGRES_USER", "postgres")
+db_password = os.environ.get("POSTGRES_PASSWORD", "postgres")
+db_host = os.environ.get("POSTGRES_HOST", "127.0.0.1")
+db_port = os.environ.get("POSTGRES_PORT", "5434")
+db_name = os.environ.get("POSTGRES_DB", "closely_db_test")
+os.environ["DATABASE_URL"] = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
 
 # Ensure backend root is on path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -17,17 +21,36 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from fastapi.testclient import TestClient
 
-from app.main import app
+from app.main import app as fastapi_app
 from app.database import Base, get_db
 from app import models
 
-# Shared test engine and session factory
 SQLALCHEMY_DATABASE_URL = os.environ["DATABASE_URL"]
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
+from sqlalchemy.pool import NullPool
+engine = create_engine(SQLALCHEMY_DATABASE_URL, poolclass=NullPool)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+# Use sys.modules to patch database variables without shadowing the local 'app' name
+import sys
+sys.modules['app.database'].SessionLocal = TestingSessionLocal
+sys.modules['app.database'].engine = engine
+
+sys.modules['app.main'].engine = engine
+sys.modules['app.main'].SessionLocal = TestingSessionLocal
+
+sys.modules['app.catalog_service'].SessionLocal = TestingSessionLocal
+
+# Also ensure router modules are patched
+from app.routers import catalog, health, webhooks
+sys.modules['app.routers.catalog'].SessionLocal = TestingSessionLocal
+sys.modules['app.routers.health'].engine = engine
+sys.modules['app.routers.webhooks'].SessionLocal = TestingSessionLocal
+
+# Define app at the end of setup to ensure it exports the actual FastAPI instance
+app = fastapi_app
+
 import logging
-logging.getLogger("sqlalchemy.engine").setLevel(logging.INFO)
+logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 
 
 def override_get_db():
@@ -39,18 +62,122 @@ def override_get_db():
 
 
 # Apply dependency override globally
-app.dependency_overrides[get_db] = override_get_db
+fastapi_app.dependency_overrides[get_db] = override_get_db
+
+from app.routers.auth import login_limiter
+from app.routers.webhooks import webhook_limiter
+fastapi_app.dependency_overrides[login_limiter] = lambda: None
+fastapi_app.dependency_overrides[webhook_limiter] = lambda: None
+
+import unittest.mock
+import redis
+
+class MockRedis:
+    def __init__(self):
+        self._data = {}
+    def ping(self):
+        return True
+    def get(self, key):
+        return self._data.get(str(key))
+    def set(self, key, value, ex=None, nx=False):
+        skey = str(key)
+        if nx and skey in self._data:
+            return False
+        self._data[skey] = str(value)
+        return True
+    def incr(self, key):
+        skey = str(key)
+        val = int(self._data.get(skey, 0)) + 1
+        self._data[skey] = str(val)
+        return val
+    def expire(self, key, time):
+        return True
+    def delete(self, *keys):
+        deleted_count = 0
+        for k in keys:
+            skey = str(k)
+            if skey in self._data:
+                del self._data[skey]
+                deleted_count += 1
+        return deleted_count
+    def llen(self, key):
+        skey = str(key)
+        val = self._data.get(skey)
+        if isinstance(val, list):
+            return len(val)
+        return 0
+    def lindex(self, key, index):
+        skey = str(key)
+        val = self._data.get(skey)
+        if isinstance(val, list) and 0 <= index < len(val):
+            return val[index]
+        return None
+    def lpush(self, key, *values):
+        skey = str(key)
+        if skey not in self._data or not isinstance(self._data[skey], list):
+            self._data[skey] = []
+        for val in values:
+            self._data[skey].insert(0, str(val))
+        return len(self._data[skey])
+    def rpoplpush(self, src, dst):
+        ssrc = str(src)
+        sdst = str(dst)
+        src_list = self._data.get(ssrc)
+        if not isinstance(src_list, list) or not src_list:
+            return None
+        val = src_list.pop()
+        if sdst not in self._data or not isinstance(self._data[sdst], list):
+            self._data[sdst] = []
+        self._data[sdst].insert(0, val)
+        return val
+    def brpoplpush(self, src, dst, timeout=0):
+        return self.rpoplpush(src, dst)
+    def lrem(self, key, count, value):
+        skey = str(key)
+        val_list = self._data.get(skey)
+        if not isinstance(val_list, list):
+            return 0
+        sval = str(value)
+        removed_count = 0
+        if count >= 0:
+            idx = 0
+            while idx < len(val_list) and (count == 0 or removed_count < count):
+                if val_list[idx] == sval:
+                    val_list.pop(idx)
+                    removed_count += 1
+                else:
+                    idx += 1
+        else:
+            count = abs(count)
+            idx = len(val_list) - 1
+            while idx >= 0 and (count == 0 or removed_count < count):
+                if val_list[idx] == sval:
+                    val_list.pop(idx)
+                    removed_count += 1
+                idx -= 1
+        return removed_count
+
+_mock_redis_instance = MockRedis()
+redis.from_url = lambda *args, **kwargs: _mock_redis_instance
+redis.Redis.from_url = lambda *args, **kwargs: _mock_redis_instance
 
 # Mock AI Service for all tests to prevent slow/hanging network calls
-import unittest.mock
 from app import ai_service, security
 ai_service.get_embedding = unittest.mock.MagicMock(return_value=[0.0] * 768)
+ai_service.get_image_embedding = unittest.mock.MagicMock(return_value=[0.0] * 3072)
 ai_service.classify_intent = unittest.mock.MagicMock(return_value="product_discovery")
 ai_service.generate_reply = unittest.mock.MagicMock(return_value="Mocked AI reply")
 
+from app.routers import catalog, webhooks
+catalog.get_embedding = unittest.mock.MagicMock(return_value=[0.0] * 768)
+catalog.get_image_embedding = unittest.mock.MagicMock(return_value=[0.0] * 3072)
+
 # Mock bcrypt to avoid CPU bottlenecks in tests
+from app.routers import auth
 security.get_password_hash = lambda password: f"mocked_hash_{password}"
 security.verify_password = lambda plain, hashed: hashed == f"mocked_hash_{plain}"
+auth.get_password_hash = lambda password: f"mocked_hash_{password}"
+auth.verify_password = lambda plain, hashed: hashed == f"mocked_hash_{plain}"
 
 
 import pytest
@@ -59,26 +186,32 @@ import pytest
 def initialize_db():
     setup_test_db()
     yield
-    # We can keep tables or drop them at end of session
 
 def setup_test_db():
     """Create pgvector extension, all tables, and RLS policies."""
-    engine.dispose()
+    # Force-terminate all other sessions on closely_db_test to avoid locks during drop_all
+    try:
+        # Use a short connect timeout so it never hangs
+        kill_engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"connect_timeout": 3})
+        with kill_engine.connect() as kill_conn:
+            kill_conn.execute(text("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'closely_db_test' AND pid != pg_backend_pid();"))
+            kill_conn.commit()
+        kill_engine.dispose()
+    except Exception:
+        pass
+
+    print(f"Base.metadata.tables: {list(Base.metadata.tables.keys())}")
     with engine.connect() as conn:
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
         conn.commit()
-        try:
-            conn.execute(text("""
-                SELECT pg_terminate_backend(pid) 
-                FROM pg_stat_activity 
-                WHERE datname = current_database() AND pid <> pg_backend_pid();
-            """))
-            conn.commit()
-        except Exception:
-            pass
-    engine.dispose()
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
+    
+    with engine.connect() as conn:
+        conn.execute(text("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO closely_app;"))
+        conn.execute(text("REVOKE UPDATE, DELETE ON approval_audit_logs FROM closely_app;"))
+        conn.execute(text("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO closely_app;"))
+        conn.commit()
     
     # Apply RLS policies for testing
     direct_tables = [
@@ -88,6 +221,7 @@ def setup_test_db():
         ('categories', 'organization_id'),
         ('users', 'organization_id'),
         ('approval_requests', 'organization_id'),
+        ('outbound_messages', 'organization_id'),
         ('notifications', 'organization_id'),
         ('customer_memories', 'organization_id'),
         ('organizations', 'id')
@@ -100,62 +234,54 @@ def setup_test_db():
             conn.execute(text(f"""
             CREATE POLICY {table_name}_tenant_insert_policy ON {table_name}
             FOR INSERT WITH CHECK (
-                current_setting('app.current_tenant', true) = '' OR
                 {org_col} = nullif(current_setting('app.current_tenant', true), '')::uuid
             );
             """))
-            conn.execute(text(f"""
-            CREATE POLICY {table_name}_tenant_update_policy ON {table_name}
-            FOR UPDATE USING (
-                current_setting('app.current_tenant', true) = '' OR
-                {org_col} = nullif(current_setting('app.current_tenant', true), '')::uuid
-            ) WITH CHECK (
-                current_setting('app.current_tenant', true) = '' OR
-                {org_col} = nullif(current_setting('app.current_tenant', true), '')::uuid
-            );
-            """))
+            if table_name != 'approval_audit_logs':
+                conn.execute(text(f"""
+                CREATE POLICY {table_name}_tenant_update_policy ON {table_name}
+                FOR UPDATE USING (
+                    {org_col} = nullif(current_setting('app.current_tenant', true), '')::uuid
+                ) WITH CHECK (
+                    {org_col} = nullif(current_setting('app.current_tenant', true), '')::uuid
+                );
+                """))
             conn.execute(text(f"""
             CREATE POLICY {table_name}_tenant_select_policy ON {table_name}
             FOR SELECT USING (
-                current_setting('app.current_tenant', true) = '' OR
                 {org_col} = nullif(current_setting('app.current_tenant', true), '')::uuid
             );
             """))
-            conn.execute(text(f"""
-            CREATE POLICY {table_name}_tenant_delete_policy ON {table_name}
-            FOR DELETE USING (
-                current_setting('app.current_tenant', true) = '' OR
-                {org_col} = nullif(current_setting('app.current_tenant', true), '')::uuid
-            );
-            """))
+            if table_name != 'approval_audit_logs':
+                conn.execute(text(f"""
+                CREATE POLICY {table_name}_tenant_delete_policy ON {table_name}
+                FOR DELETE USING (
+                    {org_col} = nullif(current_setting('app.current_tenant', true), '')::uuid
+                );
+                """))
 
         # messages table
         conn.execute(text("ALTER TABLE messages ENABLE ROW LEVEL SECURITY;"))
         conn.execute(text("ALTER TABLE messages FORCE ROW LEVEL SECURITY;"))
         conn.execute(text("""
         CREATE POLICY messages_tenant_insert_policy ON messages FOR INSERT WITH CHECK (
-            current_setting('app.current_tenant', true) = '' OR
             conversation_id IN (SELECT id FROM conversations WHERE organization_id = nullif(current_setting('app.current_tenant', true), '')::uuid)
         );
         """))
         conn.execute(text("""
         CREATE POLICY messages_tenant_update_policy ON messages FOR UPDATE USING (
-            current_setting('app.current_tenant', true) = '' OR
             conversation_id IN (SELECT id FROM conversations WHERE organization_id = nullif(current_setting('app.current_tenant', true), '')::uuid)
         ) WITH CHECK (
-            current_setting('app.current_tenant', true) = '' OR
             conversation_id IN (SELECT id FROM conversations WHERE organization_id = nullif(current_setting('app.current_tenant', true), '')::uuid)
         );
         """))
         conn.execute(text("""
         CREATE POLICY messages_tenant_select_policy ON messages FOR SELECT USING (
-            current_setting('app.current_tenant', true) = '' OR
             conversation_id IN (SELECT id FROM conversations WHERE organization_id = nullif(current_setting('app.current_tenant', true), '')::uuid)
         );
         """))
         conn.execute(text("""
         CREATE POLICY messages_tenant_delete_policy ON messages FOR DELETE USING (
-            current_setting('app.current_tenant', true) = '' OR
             conversation_id IN (SELECT id FROM conversations WHERE organization_id = nullif(current_setting('app.current_tenant', true), '')::uuid)
         );
         """))
@@ -165,16 +291,13 @@ def setup_test_db():
         conn.execute(text("ALTER TABLE order_items FORCE ROW LEVEL SECURITY;"))
         conn.execute(text("""
         CREATE POLICY order_items_tenant_insert_policy ON order_items FOR INSERT WITH CHECK (
-            current_setting('app.current_tenant', true) = '' OR
             order_id IN (SELECT id FROM orders WHERE organization_id = nullif(current_setting('app.current_tenant', true), '')::uuid)
         );
         """))
         conn.execute(text("""
         CREATE POLICY order_items_tenant_update_policy ON order_items FOR UPDATE USING (
-            current_setting('app.current_tenant', true) = '' OR
             order_id IN (SELECT id FROM orders WHERE organization_id = nullif(current_setting('app.current_tenant', true), '')::uuid)
         ) WITH CHECK (
-            current_setting('app.current_tenant', true) = '' OR
             order_id IN (SELECT id FROM orders WHERE organization_id = nullif(current_setting('app.current_tenant', true), '')::uuid)
         );
         """))
@@ -250,36 +373,34 @@ def teardown_test_db():
 
 
 def clean_tables(db):
-    """Delete all rows across all tables atomically using TRUNCATE CASCADE."""
+    """Delete all rows across all tables atomically using DELETE in reverse order."""
     from app.database import tenant_var
     tenant_var.set(None)
     db.is_admin = True
     db.organization_id = None
     try:
-        db.execute(text("TRUNCATE TABLE organizations, users, categories, products, conversations, messages, customer_memories, orders, order_items, recommendation_feedback, approval_requests, notifications CASCADE;"))
-        db.commit()
+        table_names = [
+            "outbound_messages",
+            "approval_audit_logs",
+            "recommendation_feedback",
+            "order_items",
+            "orders",
+            "notifications",
+            "approval_requests",
+            "customer_memories",
+            "messages",
+            "conversations",
+            "products",
+            "categories",
+            "users",
+            "organizations"
+        ]
+        with engine.connect() as conn:
+            for tbl in table_names:
+                conn.execute(text(f"DELETE FROM {tbl};"))
+            conn.commit()
     except Exception:
         db.rollback()
-        # Fallback to model deletes with rollback on error
-        for model in [
-            models.RecommendationFeedback,
-            models.OrderItem,
-            models.Order,
-            models.Notification,
-            models.ApprovalRequest,
-            models.CustomerMemory,
-            models.Message,
-            models.Conversation,
-            models.Product,
-            models.Category,
-            models.User,
-            models.Organization
-        ]:
-            try:
-                db.query(model).delete()
-                db.commit()
-            except Exception:
-                db.rollback()
     finally:
         db.is_admin = False
 

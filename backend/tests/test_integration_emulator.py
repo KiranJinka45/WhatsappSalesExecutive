@@ -18,6 +18,7 @@ def run_emulator():
     settings.WHATSAPP_API_BASE_URL = "http://127.0.0.1:9000"
     settings.WHATSAPP_PHONE_NUMBER_ID = "mock_phone_id"
     settings.WHATSAPP_ACCESS_TOKEN = "mock_access_token"
+    settings.SHADOW_MODE = False
     
     config = uvicorn.Config(emulator_app, host="127.0.0.1", port=9000, log_level="warning")
     server = uvicorn.Server(config)
@@ -43,7 +44,7 @@ def clean_emulator_and_db():
     org = models.Organization(
         name="Bangalore Couture Test",
         whatsapp_number="15550000000",
-        policies={"return_policy": "No returns allowed."}
+        policies={"return_policy": "No returns allowed.", "shadow_mode": False}
     )
     db.add(org)
     db.commit()

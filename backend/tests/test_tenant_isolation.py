@@ -60,7 +60,7 @@ class TestTenantIsolation(unittest.TestCase):
         login_data = {"username": email, "password": "password123"}
         res = self.client.post("/api/auth/login", data=login_data)
         self.assertEqual(res.status_code, 200)
-        token = res.cookies.get("access_token")
+        token = res.json()["access_token"]
         return {"Authorization": f"Bearer {token}"}
 
     def test_tenant_read_isolation(self):
@@ -188,7 +188,7 @@ class TestTenantIsolation(unittest.TestCase):
         self.assertEqual(res_detail.status_code, 404)
 
         # Attempt takeover on Tenant B's conversation as Tenant A
-        res_takeover = self.client.post(f"/api/conversations/{conv_b_id}/takeover?status_val=OWNER_ACTIVE", headers=self.org_a_headers)
+        res_takeover = self.client.post(f"/api/conversations/{conv_b_id}/takeover?status_val=HUMAN_TAKEOVER", headers=self.org_a_headers)
         self.assertEqual(res_takeover.status_code, 404)
 
     def test_db_rls_isolation(self):
@@ -347,16 +347,26 @@ class TestTenantIsolation(unittest.TestCase):
         """
         Verify login rate limiter returns 429 after exceeding limit.
         """
-        login_data = {"username": "limit@test.com", "password": "password123"}
+        from app.routers.auth import login_limiter
+        original_override = app.dependency_overrides.get(login_limiter)
+        if login_limiter in app.dependency_overrides:
+            del app.dependency_overrides[login_limiter]
         
-        # Call login up to 5 times (limiter limit is 5)
-        for _ in range(5):
-            self.client.post("/api/auth/login", data=login_data)
+        try:
+            login_limiter.requests.clear()
+            login_data = {"username": "limit@test.com", "password": "password123"}
             
-        # 6th call should trigger 429
-        res = self.client.post("/api/auth/login", data=login_data)
-        self.assertEqual(res.status_code, 429)
-        self.assertIn("Too many requests", res.json()["detail"])
+            # Call login up to 5 times (limiter limit is 5)
+            for _ in range(5):
+                self.client.post("/api/auth/login", data=login_data)
+                
+            # 6th call should trigger 429
+            res = self.client.post("/api/auth/login", data=login_data)
+            self.assertEqual(res.status_code, 429)
+            self.assertIn("Too many requests", res.json()["detail"])
+        finally:
+            if original_override is not None:
+                app.dependency_overrides[login_limiter] = original_override
 
     def test_cross_tenant_caching_isolation(self):
         """
@@ -367,7 +377,16 @@ class TestTenantIsolation(unittest.TestCase):
         res_a = self.client.post(
             "/api/catalog/products",
             headers=self.org_a_headers,
-            json={"sku": "ORG-A-ONLY-SKU", "name": "Product A", "price": 10.0, "color": "Red"}
+            json={
+                "sku": "ORG-A-ONLY-SKU",
+                "name": "Product A",
+                "category_name": "Kurtas",
+                "price": "10.00",
+                "color": "Red",
+                "fabric": "Cotton",
+                "sizes": ["M"],
+                "stock_count": 10
+            }
         )
         self.assertEqual(res_a.status_code, 201)
 
@@ -375,7 +394,16 @@ class TestTenantIsolation(unittest.TestCase):
         res_b = self.client.post(
             "/api/catalog/products",
             headers=self.org_b_headers,
-            json={"sku": "ORG-B-ONLY-SKU", "name": "Product B", "price": 20.0, "color": "Blue"}
+            json={
+                "sku": "ORG-B-ONLY-SKU",
+                "name": "Product B",
+                "category_name": "Sarees",
+                "price": "20.00",
+                "color": "Blue",
+                "fabric": "Silk",
+                "sizes": ["Free"],
+                "stock_count": 5
+            }
         )
         self.assertEqual(res_b.status_code, 201)
 
