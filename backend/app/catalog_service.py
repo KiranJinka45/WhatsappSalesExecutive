@@ -17,11 +17,11 @@ class CatalogRow(BaseModel):
     name: str = Field(..., min_length=1)
     price: Decimal = Field(..., ge=0)
     color: Optional[str] = Field(default=None)
-    category_name: str = Field(..., min_length=1, max_length=100)
-    gender: str = Field(default="Unisex")
+    category_name: str = Field(default="Sarees", min_length=1, max_length=100)
+    gender: str = Field(default="Women")
     fabric: Optional[str] = Field(default=None)
     description: str = Field(default="")
-    stock_count: int = Field(..., ge=0)
+    stock_count: int = Field(default=10, ge=0)
     sizes: List[str] = Field(default_factory=list)
     image_urls: List[str] = Field(default_factory=list)
     video_urls: List[str] = Field(default_factory=list)
@@ -196,26 +196,34 @@ def parse_and_sync_catalog(
     normalized_header = []
     for col in header:
         col_clean = col.strip().lower()
-        if col_clean in ['stock count', 'stock_count', 'stock', 'qty', 'quantity', 'inventory']:
+        if col_clean in ['stock count', 'stock_count', 'stock', 'qty', 'quantity', 'inventory', 'available stock', 'units', 'available_qty']:
             normalized_header.append('stock_count')
-        elif col_clean in ['price (inr)', 'price(inr)', 'price_inr', 'price', 'mrp', 'amount', 'cost']:
+        elif col_clean in ['price (inr)', 'price(inr)', 'price_inr', 'price', 'mrp', 'amount', 'cost', 'unit price', 'rate', 'mrp (inr)']:
             normalized_header.append('price')
-        elif col_clean in ['category_name', 'category name', 'category']:
+        elif col_clean in ['category_name', 'category name', 'category', 'type', 'product type', 'collection', 'group']:
             normalized_header.append('category')
-        elif col_clean in ['image urls', 'image_urls', 'images', 'image_url', 'image', 'image_link', 'image link', 'photo', 'photos', 'product_image', 'product image', 'link', 'url', 'urls']:
+        elif col_clean in ['image urls', 'image_urls', 'images', 'image_url', 'image', 'image_link', 'image link', 'photo', 'photos', 'product_image', 'product image', 'link', 'url', 'urls', 'image url']:
             normalized_header.append('image_urls')
         elif col_clean in ['video urls', 'video_urls', 'videos', 'video_url']:
             normalized_header.append('video_urls')
-        elif col_clean in ['size', 'sizes', 'product_size', 'product sizes', 'size list']:
+        elif col_clean in ['size', 'sizes', 'product_size', 'product sizes', 'size list', 'available sizes']:
             normalized_header.append('sizes')
-        elif col_clean in ['color', 'colors', 'colour', 'colours']:
+        elif col_clean in ['color', 'colors', 'colour', 'colours', 'shade']:
             normalized_header.append('color')
         elif col_clean in ['fabric', 'fabrics', 'material', 'materials']:
             normalized_header.append('fabric')
+        elif col_clean in ['product_name', 'product name', 'title', 'item_name', 'item name', 'product_title']:
+            normalized_header.append('name')
+        elif col_clean in ['product_sku', 'product sku', 'item_sku', 'code', 'item code', 'id', 'product_id']:
+            normalized_header.append('sku')
+        elif col_clean in ['gender', 'target gender', 'target_gender']:
+            normalized_header.append('gender')
+        elif col_clean in ['description', 'details', 'product description', 'product_description', 'about']:
+            normalized_header.append('description')
         else:
             normalized_header.append(col_clean)
 
-    required_cols = ['sku', 'name', 'price', 'category', 'stock_count']
+    required_cols = ['sku', 'name', 'price']
     missing_cols = [col for col in required_cols if col not in normalized_header]
     if missing_cols:
         raise ValueError(f"Missing required columns in CSV: {', '.join(missing_cols)}")
@@ -230,26 +238,44 @@ def parse_and_sync_catalog(
     seen_skus = set()
 
     for idx, row in enumerate(reader, start=2):
-        if not row or all(not val.strip() for val in row.values() if val):
+        if not row or all(not str(val).strip() for val in row.values() if val is not None):
             continue
             
         # Pre-process some fields before Pydantic validation
-        raw_price = (row.get('price') or '').strip()
-        clean_price = re.sub(r'[^\d.-]', '', raw_price) if raw_price else ''
+        raw_price = str(row.get('price') or '').strip()
+        is_neg_price = raw_price.startswith('-')
+        digits_dots = re.sub(r'[^\d.]', '', raw_price)
+        if digits_dots:
+            clean_price = f"-{digits_dots}" if is_neg_price else digits_dots
+        else:
+            clean_price = None
         
+        raw_stock = str(row.get('stock_count') or '').strip()
+        is_neg_stock = raw_stock.startswith('-')
+        digits_stock = re.sub(r'[^\d]', '', raw_stock)
+        if digits_stock:
+            stock_val = -int(digits_stock) if is_neg_stock else int(digits_stock)
+        elif not raw_stock:
+            stock_val = 10
+        else:
+            stock_val = None
+
+        category_val = str(row.get('category') or '').strip() or 'Sarees'
+        gender_val = str(row.get('gender') or '').strip() or 'Women'
+
         row_dict = {
-            'sku': (row.get('sku') or '').strip(),
-            'name': (row.get('name') or '').strip(),
-            'price': clean_price or None,
-            'color': (row.get('color') or '').strip() or None,
-            'category_name': (row.get('category') or '').strip(),
-            'gender': (row.get('gender') or 'Unisex').strip(),
-            'fabric': (row.get('fabric') or '').strip() or None,
-            'description': (row.get('description') or '').strip(),
-            'stock_count': (row.get('stock_count') or '').strip() or None,
-            'sizes': (row.get('sizes') or '').strip(),
-            'image_urls': (row.get('image_urls') or '').strip(),
-            'video_urls': (row.get('video_urls') or '').strip(),
+            'sku': str(row.get('sku') or '').strip(),
+            'name': str(row.get('name') or '').strip(),
+            'price': clean_price,
+            'color': str(row.get('color') or '').strip() or None,
+            'category_name': category_val,
+            'gender': gender_val,
+            'fabric': str(row.get('fabric') or '').strip() or None,
+            'description': str(row.get('description') or '').strip(),
+            'stock_count': stock_val,
+            'sizes': str(row.get('sizes') or '').strip(),
+            'image_urls': str(row.get('image_urls') or '').strip(),
+            'video_urls': str(row.get('video_urls') or '').strip(),
         }
 
         try:

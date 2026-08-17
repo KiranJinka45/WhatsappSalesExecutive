@@ -32,14 +32,17 @@ async def upload_catalog(
         )
         return result
     except ValueError as ve:
+        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(ve)
         )
     except Exception as e:
+        logger.error(f"Catalog upload error: {e}", exc_info=True)
+        db.rollback()
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Upload failed: {str(e)}"
         )
 
 import uuid
