@@ -15,6 +15,7 @@ router = APIRouter(prefix="/api/catalog", tags=["catalog"], responses={401: {"de
 async def upload_catalog(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    mode: str = Query("atomic", description="Import mode: 'atomic' or 'partial'"),
     db: Session = Depends(get_db),
     org: models.Organization = Depends(security.get_current_org),
     current_user: models.User = Depends(security.require_role("owner"))
@@ -27,7 +28,7 @@ async def upload_catalog(
     try:
         contents = await file.read()
         result = catalog_service.parse_and_sync_catalog(
-            db, str(org.id), contents, file.filename, background_tasks
+            db, str(org.id), contents, file.filename, background_tasks, mode=mode
         )
         return result
     except ValueError as ve:
@@ -92,14 +93,74 @@ def get_products(
     db: Session = Depends(get_db),
     org: models.Organization = Depends(security.get_current_org)
 ):
+    extracted_entities = {}
+    if q and q.strip():
+        try:
+            from ..ai.entity_extractor import extract_entities
+            extracted_entities = extract_entities(q)
+        except Exception as err:
+            logger.warning(f"Entity extraction failed for query '{q}': {err}")
+
+    # Merge extracted entities if explicit parameters were not supplied
+    if min_price is None and extracted_entities.get("budget_min") is not None:
+        try:
+            min_price = Decimal(str(extracted_entities["budget_min"]))
+        except Exception:
+            pass
+    if max_price is None and extracted_entities.get("budget_max") is not None:
+        try:
+            max_price = Decimal(str(extracted_entities["budget_max"]))
+        except Exception:
+            pass
+    if color is None and extracted_entities.get("color"):
+        color = str(extracted_entities["color"])
+    if fabric is None and extracted_entities.get("fabric"):
+        fabric = str(extracted_entities["fabric"])
+    if gender is None and extracted_entities.get("gender"):
+        gender = str(extracted_entities["gender"])
+
     query = db.query(models.Product)
 
-    # If search query is provided
+    # 1. Apply all structured filters first
+    if category_id:
+        query = query.filter(models.Product.category_id == category_id)
+    elif extracted_entities.get("product_type"):
+        cat_name = str(extracted_entities["product_type"])
+        query = query.join(models.Category, isouter=True).filter(
+            or_(models.Category.name.ilike(f"%{cat_name}%"), models.Product.name.ilike(f"%{cat_name}%"))
+        )
+
+    if gender:
+        query = query.filter(or_(models.Product.gender.ilike(f"%{gender}%"), models.Product.gender.is_(None)))
+    if min_price is not None:
+        query = query.filter(models.Product.price >= min_price)
+    if max_price is not None:
+        query = query.filter(models.Product.price <= max_price)
+    if color:
+        query = query.filter(models.Product.color.ilike(f"%{color}%"))
+    if fabric:
+        query = query.filter(models.Product.fabric.ilike(f"%{fabric}%"))
+    if in_stock is True:
+        query = query.filter(models.Product.stock_count > 0)
+    elif in_stock is False:
+        query = query.filter(models.Product.stock_count == 0)
+
+    # 2. Search execution: If structured entities were extracted, return entity-filtered results deterministically
+    has_structured_filters = bool(
+        category_id or gender or min_price is not None or max_price is not None or color or fabric or extracted_entities.get("product_type")
+    )
+
+    if has_structured_filters:
+        entity_results = query.order_by(models.Product.created_at.desc()).offset(offset).limit(limit).all()
+        if entity_results:
+            return entity_results
+
+    # 3. Fallback text or vector similarity search if query provided and no structured results found
     if q and q.strip():
         search_str = q.strip()
         pattern = f"%{search_str}%"
 
-        # 1. First check for direct text matches (SKU, Name, Color, Fabric, Description)
+        # Check for direct text matches across fields
         text_match_query = query.filter(
             or_(
                 models.Product.sku.ilike(pattern),
@@ -109,12 +170,11 @@ def get_products(
                 models.Product.description.ilike(pattern)
             )
         )
-
-        text_results = text_match_query.all()
+        text_results = text_match_query.offset(offset).limit(limit).all()
         if text_results:
-            return text_results[offset:offset+limit]
+            return text_results
 
-        # 2. Fallback to vector semantic search
+        # Fallback to vector semantic search
         try:
             from ..ai_service import get_embedding
             query_embedding = get_embedding(search_str)
@@ -129,24 +189,6 @@ def get_products(
             query = query.order_by(models.Product.created_at.desc())
     else:
         query = query.order_by(models.Product.created_at.desc())
-
-    # Apply structured filters
-    if category_id:
-        query = query.filter(models.Product.category_id == category_id)
-    if gender:
-        query = query.filter(models.Product.gender.ilike(gender))
-    if min_price is not None:
-        query = query.filter(models.Product.price >= min_price)
-    if max_price is not None:
-        query = query.filter(models.Product.price <= max_price)
-    if color:
-        query = query.filter(models.Product.color.ilike(color))
-    if fabric:
-        query = query.filter(models.Product.fabric.ilike(fabric))
-    if in_stock is True:
-        query = query.filter(models.Product.stock_count > 0)
-    elif in_stock is False:
-        query = query.filter(models.Product.stock_count == 0)
 
     return query.offset(offset).limit(limit).all()
 

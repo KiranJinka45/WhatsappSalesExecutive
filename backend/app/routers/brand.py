@@ -65,12 +65,34 @@ def update_brand_profile(
         for field, value in update_data.items():
             if field == "policies":
                 existing_policies = org.policies if isinstance(org.policies, dict) else {}
+                old_ks = existing_policies.get("emergency_kill_switch")
                 merged = dict(existing_policies)
                 if isinstance(value, dict):
                     merged.update(value)
+                new_ks = merged.get("emergency_kill_switch")
                 org.policies = merged
                 from sqlalchemy.orm.attributes import flag_modified
                 flag_modified(org, "policies")
+
+                # Audit log kill switch state changes
+                if old_ks is not None and old_ks != new_ks:
+                    action_type = "KILL_SWITCH_DEACTIVATED" if new_ks is False else "KILL_SWITCH_ACTIVATED"
+                    reason_msg = "Owner preflight deactivation for live approval-only sending" if new_ks is False else "Kill switch enabled by owner"
+                    ks_audit = models.ApprovalAuditLog(
+                        organization_id=org.id,
+                        user_id=current_user.id,
+                        action=action_type,
+                        previous_status="KILL_SWITCH_ACTIVE" if old_ks else "KILL_SWITCH_INACTIVE",
+                        new_status="KILL_SWITCH_INACTIVE" if new_ks is False else "KILL_SWITCH_ACTIVE",
+                        message_content=reason_msg,
+                        metadata_={
+                            "reason": reason_msg,
+                            "actor_user_id": str(current_user.id),
+                            "previous_state": old_ks,
+                            "new_state": new_ks
+                        }
+                    )
+                    db.add(ks_audit)
             else:
                 setattr(org, field, value)
 
@@ -233,3 +255,75 @@ def delete_brand_profile(
         )
     db.commit()
     return None
+
+
+@router.post("/kill-switch", response_model=schemas.KillSwitchOut)
+def toggle_emergency_kill_switch(
+    payload: schemas.KillSwitchRequest,
+    db: Session = Depends(get_db),
+    org: models.Organization = Depends(security.get_current_org),
+    current_user: models.User = Depends(security.require_role("owner", "admin"))
+):
+    """
+    Emergency Kill-Switch Endpoint:
+    Immediately halts or resumes all outbound WhatsApp messaging for this tenant.
+    Audited with an immutable log record.
+    """
+    from datetime import datetime, timezone
+    from sqlalchemy.sql import func
+    from ..connection_manager import manager
+
+    policies = dict(org.policies or {})
+    policies["emergency_kill_switch"] = payload.active
+    policies["kill_switch_reason"] = payload.reason or ""
+    policies["kill_switch_updated_at"] = datetime.now(timezone.utc).isoformat()
+    policies["kill_switch_updated_by"] = str(current_user.id)
+    org.policies = policies
+    db.commit()
+    db.refresh(org)
+
+    # Append-only audit log entry
+    action_name = "KILL_SWITCH_ACTIVATED" if payload.active else "KILL_SWITCH_DEACTIVATED"
+    audit = models.ApprovalAuditLog(
+        organization_id=org.id,
+        user_id=current_user.id,
+        action=action_name,
+        previous_status=None,
+        new_status="ACTIVE" if payload.active else "INACTIVE",
+        metadata_={"reason": payload.reason, "user_email": current_user.email}
+    )
+    db.add(audit)
+    db.commit()
+
+    manager.broadcast(str(org.id), "kill_switch_toggled", {
+        "emergency_kill_switch": payload.active,
+        "reason": payload.reason
+    })
+
+    return schemas.KillSwitchOut(
+        emergency_kill_switch=payload.active,
+        operating_mode=policies.get("operating_mode", "SHADOW"),
+        updated_at=datetime.now(timezone.utc),
+        updated_by_user_id=current_user.id
+    )
+
+
+@router.get("/kill-switch", response_model=schemas.KillSwitchOut)
+def get_kill_switch_status(
+    org: models.Organization = Depends(security.get_current_org),
+    current_user: models.User = Depends(security.get_current_user)
+):
+    """
+    Retrieve current emergency kill switch status and operating mode.
+    """
+    from datetime import datetime, timezone
+    policies = org.policies or {}
+    return schemas.KillSwitchOut(
+        emergency_kill_switch=bool(policies.get("emergency_kill_switch", False)),
+        operating_mode=str(policies.get("operating_mode", "SHADOW")),
+        updated_at=datetime.now(timezone.utc),
+        updated_by_user_id=None
+    )
+
+
+

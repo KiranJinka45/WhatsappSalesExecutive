@@ -70,6 +70,11 @@ def process_message_async(
     db = SessionLocal()
     db.organization_id = org_uuid
     token = tenant_var.set(org_uuid)
+    try:
+        from sqlalchemy import text
+        db.execute(text("SET LOCAL app.current_tenant = :org_id"), {"org_id": str(org_uuid)})
+    except Exception:
+        pass
     
     for attempt in range(max_retries):
         try:
@@ -81,6 +86,11 @@ def process_message_async(
                 db = SessionLocal()
                 db.organization_id = org_uuid
                 tenant_var.set(org_uuid)
+                try:
+                    from sqlalchemy import text
+                    db.execute(text("SET LOCAL app.current_tenant = :org_id"), {"org_id": str(org_uuid)})
+                except Exception:
+                    pass
 
             conv = db.query(models.Conversation).filter(models.Conversation.id == conv_uuid).first()
             if not conv:
@@ -91,19 +101,8 @@ def process_message_async(
                 conv.status = "AI_ACTIVE"
                 db.commit()
 
-            # Retrieve organization details globally for settings/keys
-            org_token = tenant_var.set(None)
-            db.organization_id = None
-            old_is_admin = getattr(db, "is_admin", False)
-            db.is_admin = True
-            try:
-                from sqlalchemy import text
-                db.execute(text("SET LOCAL app.current_tenant = ''"))
-                org = db.query(models.Organization).filter(models.Organization.id == org_uuid).first()
-            finally:
-                db.is_admin = old_is_admin
-                tenant_var.reset(org_token)
-                db.organization_id = org_uuid
+            # Retrieve organization details for settings/keys
+            org = db.query(models.Organization).filter(models.Organization.id == org_uuid).first()
 
             if not org:
                 logger.error(f"Organization {org_uuid} not found in async task.")
@@ -220,18 +219,7 @@ def process_message_async(
 
             # Context retrieval initialization
             catalog_context = []
-            org_token = tenant_var.set(None)
-            db.organization_id = None
-            old_is_admin = getattr(db, "is_admin", False)
-            db.is_admin = True
-            try:
-                from sqlalchemy import text
-                db.execute(text("SET LOCAL app.current_tenant = ''"))
-                org = db.query(models.Organization).filter(models.Organization.id == org_uuid).first()
-            finally:
-                db.is_admin = old_is_admin
-                tenant_var.reset(org_token)
-                db.organization_id = org_uuid
+            org = db.query(models.Organization).filter(models.Organization.id == org_uuid).first()
                 
             if not org:
                 logger.error(f"Organization {org_uuid} not found in async task.")
@@ -792,11 +780,15 @@ def process_message_async(
                 db.commit()
                 db.refresh(ai_msg)
                 
+                draft_hash = hashlib.sha256(ai_reply.strip().encode("utf-8")).hexdigest()
+                price_snap = {item["sku"]: float(item.get("price", 0.0)) for item in (catalog_context or []) if isinstance(item, dict) and "sku" in item}
+                stock_snap = {item["sku"]: int(item.get("stock_quantity", item.get("stock", 0))) for item in (catalog_context or []) if isinstance(item, dict) and "sku" in item}
+
                 # Create Approval Request record with complete audit metadata
                 approval = models.ApprovalRequest(
                     conversation_id=conv.id,
                     organization_id=org_uuid,
-                    status="pending",
+                    status="WAITING_APPROVAL",
                     reason=reason,
                     proposed_response=ai_reply,
                     ai_recommendation=ai_recommendation,
@@ -807,6 +799,9 @@ def process_message_async(
                     grounding_score=1.0 if is_valid else 0.0,
                     decision_engine_version=getattr(ai_service.decision_engine, "DECISION_ENGINE_VERSION", "v1.0"),
                     rule_triggered=rule_triggered,
+                    message_hash=draft_hash,
+                    price_snapshot=price_snap,
+                    stock_snapshot=stock_snap,
                     metadata_={
                         "intent": intent,
                         "explainability_meta": explainability_meta
@@ -815,6 +810,26 @@ def process_message_async(
                 db.add(approval)
                 db.commit()
                 db.refresh(approval)
+
+                # Log initial DRAFT_CREATED audit trail record
+                draft_audit = models.ApprovalAuditLog(
+                    organization_id=org_uuid,
+                    approval_request_id=approval.id,
+                    conversation_id=conv.id,
+                    action="DRAFT_CREATED",
+                    previous_status=None,
+                    new_status="WAITING_APPROVAL",
+                    message_content=ai_reply,
+                    message_hash=draft_hash,
+                    revalidation_passed=True,
+                    metadata_={
+                        "reason": reason,
+                        "intent": intent,
+                        "rule_triggered": rule_triggered
+                    }
+                )
+                db.add(draft_audit)
+                db.commit()
 
                 # Update approval_request_id in observability log and metadata
                 observability_log["approval_request_id"] = str(approval.id)
@@ -1017,6 +1032,8 @@ from ..rate_limiter import InMemoryRateLimiter
 
 webhook_limiter = InMemoryRateLimiter(requests_limit=100, window_seconds=60, name="webhook")
 
+_DEDUP_CACHE = set()
+
 @router.post("/whatsapp")
 async def receive_whatsapp_message(
     request: Request, 
@@ -1163,18 +1180,28 @@ async def receive_whatsapp_message(
     if not customer_phone or not message_text:
         return {"status": "ignored", "reason": "No sender phone or message content parsed."}
 
-    # Redis Deduplication
+    # Message Deduplication (Redis with in-memory fallback)
     if message_id:
         import redis
+        dedup_key = f"webhook:dedup:{message_id}"
+        is_duplicate = False
         try:
-            r = redis.from_url(settings.REDIS_URL, socket_connect_timeout=3)
-            dedup_key = f"webhook:dedup:{message_id}"
+            r = redis.from_url(settings.REDIS_URL, socket_connect_timeout=1)
             is_new = r.set(dedup_key, "1", ex=300, nx=True)
             if not is_new:
-                logger.info(f"Duplicate webhook message {message_id} ignored.")
-                return {"status": "ignored", "reason": "Duplicate message ID"}
-        except Exception as e:
-            logger.warning(f"Redis deduplication failed (proceeding anyway): {e}")
+                is_duplicate = True
+        except Exception:
+            # Fallback to process-level in-memory cache if Redis is not running
+            if message_id in _DEDUP_CACHE:
+                is_duplicate = True
+            else:
+                _DEDUP_CACHE.add(message_id)
+                if len(_DEDUP_CACHE) > 1000:
+                    _DEDUP_CACHE.clear()
+
+        if is_duplicate:
+            logger.info(f"Duplicate webhook message {message_id} ignored.")
+            return {"status": "ignored", "reason": "Duplicate message ID"}
 
     # Temporarily unset tenant filter to find the correct org globally
     token = tenant_var.set(None)
@@ -1256,13 +1283,14 @@ async def receive_whatsapp_message(
         }
     })
 
-    # Always enforce AI_ACTIVE mode on incoming customer messages and broadcast status change
-    conv.status = "AI_ACTIVE"
-    db.commit()
-    manager.broadcast(str(org.id), "status_change", {
-        "conversation_id": str(conv.id),
-        "status": "AI_ACTIVE"
-    })
+    # Enforce AI_ACTIVE mode on incoming customer messages if not in HUMAN_TAKEOVER
+    if conv.status != "HUMAN_TAKEOVER":
+        conv.status = "AI_ACTIVE"
+        db.commit()
+        manager.broadcast(str(org.id), "status_change", {
+            "conversation_id": str(conv.id),
+            "status": "AI_ACTIVE"
+        })
 
     # Delegate LLM and database intensive work to FastAPI BackgroundTasks
     background_tasks.add_task(

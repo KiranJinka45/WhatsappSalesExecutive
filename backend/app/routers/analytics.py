@@ -37,7 +37,7 @@ def dashboard_summary(
     by_status = {row[0]: row[1] for row in status_counts}
     ai_active_count = by_status.get("AI_ACTIVE", 0)
     waiting_approval_count = by_status.get("WAITING_APPROVAL", 0)
-    owner_active_count = by_status.get("OWNER_ACTIVE", 0)
+    human_takeover_count = by_status.get("HUMAN_TAKEOVER", 0)
     closed_count = by_status.get("CLOSED", 0)
 
     # Total products
@@ -67,10 +67,10 @@ def dashboard_summary(
     ) or 0
 
     # Rates
-    # Takeovers are WAITING_APPROVAL + OWNER_ACTIVE
-    human_takeover_count = waiting_approval_count + owner_active_count
+    # Human intervention count includes WAITING_APPROVAL and manual takeover conversations
+    total_human_intervention = waiting_approval_count + human_takeover_count
     ai_containment_rate = (
-        round(((total_conversations - human_takeover_count) / total_conversations) * 100, 2)
+        round(((total_conversations - total_human_intervention) / total_conversations) * 100, 2)
         if total_conversations > 0
         else 100.0
     )

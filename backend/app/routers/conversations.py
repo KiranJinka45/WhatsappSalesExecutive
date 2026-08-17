@@ -42,7 +42,7 @@ async def stream_conversations(
 
 @router.get("", response_model=List[schemas.ConversationOut])
 def get_conversations(
-    status_filter: Optional[str] = Query(None, description="AI_ACTIVE, WAITING_APPROVAL, OWNER_ACTIVE, CLOSED"),
+    status_filter: Optional[str] = Query(None, description="AI_ACTIVE, WAITING_APPROVAL, HUMAN_TAKEOVER, CLOSED"),
     assigned: Optional[bool] = Query(None),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
@@ -84,7 +84,7 @@ def toggle_takeover(
     org: models.Organization = Depends(security.get_current_org),
     current_user: models.User = Depends(security.get_current_user)
 ):
-    if status_val not in ["AI_ACTIVE", "WAITING_APPROVAL", "OWNER_ACTIVE", "CLOSED"]:
+    if status_val not in ["AI_ACTIVE", "WAITING_APPROVAL", "HUMAN_TAKEOVER", "CLOSED"]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid status value")
         
     conv = db.query(models.Conversation).filter(
@@ -94,11 +94,14 @@ def toggle_takeover(
     if not conv:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
 
-    conv.status = status_val
-    if status_val == "OWNER_ACTIVE":
+    if status_val == "HUMAN_TAKEOVER":
+        conv.status = "HUMAN_TAKEOVER"
         conv.assigned_user_id = current_user.id
     elif status_val == "AI_ACTIVE":
+        conv.status = "AI_ACTIVE"
         conv.assigned_user_id = None
+    else:
+        conv.status = status_val
         
     db.commit()
     db.refresh(conv)
@@ -110,7 +113,7 @@ def toggle_takeover(
     })
 
     # If resumed to AI_ACTIVE, trigger AI processing for the latest customer message if unreplied
-    if status_val == "AI_ACTIVE":
+    if conv.status == "AI_ACTIVE":
         last_msg = db.query(models.Message).filter(
             models.Message.conversation_id == conv.id
         ).order_by(models.Message.created_at.desc()).first()
@@ -135,8 +138,8 @@ def send_agent_message(
     if not conv:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
 
-    # Force status to OWNER_ACTIVE and assign user since agent replied manually
-    conv.status = "OWNER_ACTIVE"
+    # Force status to HUMAN_TAKEOVER and assign user since agent replied manually
+    conv.status = "HUMAN_TAKEOVER"
     conv.assigned_user_id = current_user.id
 
     new_msg = models.Message(
@@ -235,133 +238,26 @@ def respond_to_approval(
     resp: schemas.ApprovalRequestRespond,
     db: Session = Depends(get_db),
     org: models.Organization = Depends(security.get_current_org),
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: models.User = Depends(security.require_role("owner", "admin", "agent"))
 ):
     """
     Action to Approve, Reject, or Edit-and-Send a proposed AI response.
+    Delegates to approval_service for atomic transition, exact-message hashing, and audit logging.
     """
-    approval = db.query(models.ApprovalRequest).filter(
-        models.ApprovalRequest.organization_id == org.id,
-        models.ApprovalRequest.id == id
-    ).first()
-    if not approval:
-        raise HTTPException(status_code=404, detail="Approval request not found")
-        
+    from ..approval_service import transition_approval_state
+    
+    approval, send_result = transition_approval_state(
+        db=db,
+        approval_id=id,
+        org_id=org.id,
+        user=current_user,
+        action=resp.action,
+        edited_response=resp.edited_response,
+        reason=resp.reason
+    )
+    
     conv = db.query(models.Conversation).filter(
         models.Conversation.organization_id == org.id,
         models.Conversation.id == approval.conversation_id
     ).first()
-    if not conv:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-
-    # Find the pending AI message in the database
-    pending_msg = db.query(models.Message).filter(
-        models.Message.conversation_id == conv.id,
-        models.Message.sender == "ai",
-        models.Message.status == "pending"
-    ).order_by(models.Message.created_at.desc()).first()
-
-    final_text = ""
-    
-    if resp.action == "approve":
-        approval.status = "approved"
-        conv.status = "AI_ACTIVE"
-        final_text = approval.proposed_response
-        if pending_msg:
-            pending_msg.status = "sent"
-            pending_msg.content = final_text
-        notification = models.Notification(
-            organization_id=org.id,
-            approval_request_id=approval.id,
-            type="ApprovalApproved",
-            status="unread"
-        )
-        db.add(notification)
-            
-    elif resp.action == "reject":
-        approval.status = "rejected"
-        conv.status = "OWNER_ACTIVE"
-        conv.assigned_user_id = current_user.id
-        if pending_msg:
-            db.delete(pending_msg)
-        notification = models.Notification(
-            organization_id=org.id,
-            approval_request_id=approval.id,
-            type="ApprovalRejected",
-            status="unread"
-        )
-        db.add(notification)
-            
-    elif resp.action == "edit":
-        if not resp.edited_response:
-            raise HTTPException(status_code=400, detail="Edited response cannot be empty")
-        approval.status = "modified"
-        conv.status = "AI_ACTIVE"
-        final_text = resp.edited_response
-        if pending_msg:
-            pending_msg.status = "sent"
-            pending_msg.content = final_text
-        notification = models.Notification(
-            organization_id=org.id,
-            approval_request_id=approval.id,
-            type="ApprovalEdited",
-            status="unread"
-        )
-        db.add(notification)
-            
-    else:
-        raise HTTPException(status_code=400, detail="Invalid action")
-
-    db.commit()
-    db.refresh(conv)
-
-    # Broadcast conversation status change
-    manager.broadcast(str(org.id), "status_change", {
-        "conversation_id": str(conv.id),
-        "status": conv.status
-    })
-
-    # Broadcast database message status updates if approved/edited
-    if resp.action in ["approve", "edit"] and pending_msg:
-        manager.broadcast(str(org.id), "new_message", {
-            "conversation_id": str(conv.id),
-            "message": {
-                "id": str(pending_msg.id),
-                "sender": pending_msg.sender,
-                "message_type": pending_msg.message_type,
-                "content": pending_msg.content,
-                "status": pending_msg.status,
-                "error_message": pending_msg.error_message,
-                "created_at": pending_msg.created_at.isoformat()
-            }
-        })
-        
-        # Dispatch final message to WhatsApp Cloud API emulator/live
-        from ..bsp_service import send_whatsapp_message
-        send_whatsapp_res = send_whatsapp_message(conv.customer_phone, final_text, org)
-        if send_whatsapp_res.get("status") == "failed":
-            pending_msg.status = "failed"
-            pending_msg.error_message = send_whatsapp_res.get("error")
-            conv.status = "OWNER_ACTIVE"
-            db.commit()
-            manager.broadcast(str(org.id), "new_message", {
-                "conversation_id": str(conv.id),
-                "message": {
-                    "id": str(pending_msg.id),
-                    "sender": pending_msg.sender,
-                    "message_type": pending_msg.message_type,
-                    "content": pending_msg.content,
-                    "status": "failed",
-                    "error_message": pending_msg.error_message,
-                    "created_at": pending_msg.created_at.isoformat()
-                }
-            })
-            
-    elif resp.action == "reject" and pending_msg:
-        # Tell the client that the pending message was removed
-        manager.broadcast(str(org.id), "message_deleted", {
-            "conversation_id": str(conv.id),
-            "message_id": str(pending_msg.id)
-        })
-
     return conv
