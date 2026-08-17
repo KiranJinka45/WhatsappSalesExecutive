@@ -19,6 +19,8 @@ export default function Catalog({ token }) {
   const [imageUrl, setImageUrl] = useState('');
   const [uploadingImage, setUploadingImage] = useState(false);
   const [file, setFile] = useState(null);
+  const [importMode, setImportMode] = useState('atomic');
+  const [importErrors, setImportErrors] = useState([]);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -143,13 +145,14 @@ export default function Catalog({ token }) {
 
     setError('');
     setSuccess('');
+    setImportErrors([]);
     setLoading(true);
 
     const formData = new FormData();
     formData.append('file', file);
 
     try {
-      const res = await apiFetch('/api/catalog/upload', {
+      const res = await apiFetch(`/api/catalog/upload?mode=${importMode}`, {
         method: 'POST',
         body: formData
       });
@@ -166,7 +169,10 @@ export default function Catalog({ token }) {
       }
 
       const data = await res.json();
-      setSuccess(`Upload success! Created ${data.created} and updated ${data.updated} items.`);
+      setSuccess(`Upload ${data.status}! Created ${data.created} and updated ${data.updated} items.`);
+      if (data.errors && data.errors.length > 0) {
+        setImportErrors(data.errors);
+      }
       setFile(null);
       fetchProducts();
     } catch (err) {
@@ -200,6 +206,17 @@ export default function Catalog({ token }) {
           <p style={styles.subtitle}>Upload CSV to bulk create/sync products and compute vector embeddings.</p>
           
           <form onSubmit={handleUploadCSV} style={styles.uploadForm}>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.5rem' }}>
+              <label style={{ fontSize: '0.8rem', opacity: 0.8 }}>Mode:</label>
+              <select 
+                value={importMode} 
+                onChange={(e) => setImportMode(e.target.value)}
+                style={{ padding: '0.2rem 0.4rem', fontSize: '0.75rem', borderRadius: '4px', background: 'rgba(255,255,255,0.05)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
+              >
+                <option value="atomic">Atomic (All or Nothing)</option>
+                <option value="partial">Partial (Import valid rows, report errors)</option>
+              </select>
+            </div>
             <input 
               type="file" 
               accept=".csv"
@@ -213,6 +230,16 @@ export default function Catalog({ token }) {
           </form>
           {error && <div style={styles.error}>{error}</div>}
           {success && <div style={styles.success}>{success}</div>}
+          {importErrors.length > 0 && (
+            <div style={{ marginTop: '0.5rem', maxHeight: '120px', overflowY: 'auto', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '0.5rem', borderRadius: '4px', fontSize: '0.75rem' }}>
+              <strong>Row Errors ({importErrors.length}):</strong>
+              <ul style={{ margin: '0.25rem 0 0 1rem', padding: 0 }}>
+                {importErrors.map((err, i) => (
+                  <li key={i} style={{ color: '#fca5a5' }}>{err}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
 
         {/* 2. Compact Manual Add / Edit Product Form (Always Visible) */}

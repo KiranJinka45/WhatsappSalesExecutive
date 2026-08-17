@@ -8,6 +8,7 @@ export default function Settings({ token }) {
   const [shippingPolicy, setShippingPolicy] = useState('');
   const [returnPolicy, setReturnPolicy] = useState('');
   const [faqText, setFaqText] = useState('');
+  const [operatingMode, setOperatingMode] = useState('SHADOW');
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -18,8 +19,15 @@ export default function Settings({ token }) {
   const [testStatus, setTestStatus] = useState('');
   const [testing, setTesting] = useState(false);
 
+  // Kill Switch State
+  const [killSwitchEnabled, setKillSwitchEnabled] = useState(false);
+  const [killSwitchReason, setKillSwitchReason] = useState('');
+  const [killSwitchActivatedAt, setKillSwitchActivatedAt] = useState(null);
+  const [killSwitchLoading, setKillSwitchLoading] = useState(false);
+
   useEffect(() => {
     fetchProfile();
+    fetchKillSwitchStatus();
   }, []);
 
   const fetchProfile = async () => {
@@ -33,12 +41,61 @@ export default function Settings({ token }) {
         setShippingPolicy(data.policies?.shipping || '');
         setReturnPolicy(data.policies?.returns || '');
         setFaqText(data.policies?.faqs || '');
+        setOperatingMode(data.policies?.operating_mode || 'SHADOW');
         setWhatsappPhoneNumberId(data.whatsapp_phone_number_id || data.policies?.whatsapp_phone_number_id || '');
         setWhatsappWabaId(data.whatsapp_business_account_id || data.policies?.whatsapp_business_account_id || '');
         setWhatsappAccessToken(data.policies?.whatsapp_access_token || '');
       }
     } catch (err) {
       console.error("Error fetching brand profile:", err);
+    }
+  };
+
+  const fetchKillSwitchStatus = async () => {
+    try {
+      const res = await apiFetch('/api/brand/kill-switch');
+      if (res.ok) {
+        const data = await res.json();
+        setKillSwitchEnabled(data.kill_switch_enabled);
+        setKillSwitchReason(data.reason || '');
+        setKillSwitchActivatedAt(data.activated_at || null);
+      }
+    } catch (err) {
+      console.error("Error fetching kill switch status:", err);
+    }
+  };
+
+  const handleToggleKillSwitch = async () => {
+    const nextEnable = !killSwitchEnabled;
+    let reason = '';
+    if (nextEnable) {
+      reason = window.prompt("Enter a reason for engaging the Emergency Outbound Kill Switch (e.g. pricing error, catalog sync):", "Operational safety check");
+      if (reason === null) return; // user cancelled prompt
+    } else {
+      const confirmDisengage = window.confirm("Are you sure you want to disengage the Emergency Kill Switch and restore outbound messaging?");
+      if (!confirmDisengage) return;
+      reason = "Resuming normal operations";
+    }
+
+    setKillSwitchLoading(true);
+    try {
+      const res = await apiFetch('/api/brand/kill-switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enable: nextEnable, reason })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setKillSwitchEnabled(data.kill_switch_enabled);
+        setKillSwitchReason(data.reason || '');
+        setSuccess(data.message || (nextEnable ? "🚨 Kill Switch ENGAGED" : "✅ Kill Switch DISENGAGED"));
+      } else {
+        setError(data.detail || "Failed to update kill switch");
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setKillSwitchLoading(false);
     }
   };
 
@@ -81,6 +138,7 @@ export default function Settings({ token }) {
         shipping: shippingPolicy,
         returns: returnPolicy,
         faqs: faqText,
+        operating_mode: operatingMode,
         whatsapp_phone_number_id: whatsappPhoneNumberId,
         whatsapp_business_account_id: whatsappWabaId,
         whatsapp_access_token: whatsappAccessToken
@@ -242,22 +300,82 @@ export default function Settings({ token }) {
             />
           </div>
 
+          <div style={styles.sectionTitle}>4. Operating Mode & Safety Guardrails (Milestone 4 Pilot)</div>
+
+          {killSwitchEnabled && (
+            <div style={styles.emergencyKillBanner}>
+              <div style={{ fontWeight: '800', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                🚨 EMERGENCY OUTBOUND KILL SWITCH ACTIVE
+              </div>
+              <div style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}>
+                All outbound WhatsApp messages are unconditionally <strong>BLOCKED</strong> at the gateway. Reason: <em>"{killSwitchReason || 'Manual intervention'}"</em>
+              </div>
+            </div>
+          )}
+
           <div style={styles.inputGroup}>
-            <label style={styles.label}>General FAQs & Custom Knowledge</label>
-            <textarea 
-              className="form-input" 
-              style={styles.textareaLarge} 
-              placeholder="e.g. COD is available for all items. We accept UPI and credit card transfers. Wholesale prices require minimum order of 20 pieces..." 
-              value={faqText} 
-              onChange={e => setFaqText(e.target.value)}
-            />
+            <label style={styles.label}>AI Operating Mode</label>
+            <div style={{ display: 'flex', gap: '1rem', marginTop: '0.25rem' }}>
+              <label style={{ ...styles.radioLabel, borderColor: operatingMode === 'SHADOW' ? '#00ffc4' : 'rgba(255,255,255,0.1)', background: operatingMode === 'SHADOW' ? 'rgba(0,255,196,0.08)' : 'transparent' }}>
+                <input 
+                  type="radio" 
+                  name="operatingMode" 
+                  value="SHADOW" 
+                  checked={operatingMode === 'SHADOW'} 
+                  onChange={() => setOperatingMode('SHADOW')} 
+                />
+                <div>
+                  <div style={{ fontWeight: '700', color: operatingMode === 'SHADOW' ? '#00ffc4' : '#fff' }}>🛡️ Shadow Mode (Default)</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>AI responses generated & logged internally. 0 outbound customer messages.</div>
+                </div>
+              </label>
+
+              <label style={{ ...styles.radioLabel, borderColor: operatingMode === 'HUMAN_APPROVAL' ? '#6366f1' : 'rgba(255,255,255,0.1)', background: operatingMode === 'HUMAN_APPROVAL' ? 'rgba(99,102,241,0.08)' : 'transparent' }}>
+                <input 
+                  type="radio" 
+                  name="operatingMode" 
+                  value="HUMAN_APPROVAL" 
+                  checked={operatingMode === 'HUMAN_APPROVAL'} 
+                  onChange={() => setOperatingMode('HUMAN_APPROVAL')} 
+                />
+                <div>
+                  <div style={{ fontWeight: '700', color: operatingMode === 'HUMAN_APPROVAL' ? '#818cf8' : '#fff' }}>👤 Human Approval Pilot Mode</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>AI drafts responses to Inbox. Merchant must approve or edit before sending.</div>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          {/* Emergency Kill Switch Control Card */}
+          <div style={{ background: killSwitchEnabled ? 'rgba(239, 68, 68, 0.12)' : 'rgba(255, 255, 255, 0.03)', border: killSwitchEnabled ? '1px solid #ef4444' : '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '8px', padding: '1.25rem', marginTop: '0.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontWeight: '700', fontSize: '0.95rem', color: killSwitchEnabled ? '#f87171' : '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  {killSwitchEnabled ? '🚨 Kill Switch Status: ENGAGED' : '⚡ Emergency Outbound Kill Switch'}
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                  {killSwitchEnabled 
+                    ? `Activated on ${new Date(killSwitchActivatedAt).toLocaleString()}. Outbound messages are frozen.` 
+                    : 'Immediately suspend all outbound WhatsApp customer messaging in case of emergency.'}
+                </div>
+              </div>
+              <button
+                type="button"
+                className={`btn ${killSwitchEnabled ? 'btn-success' : 'btn-danger'}`}
+                onClick={handleToggleKillSwitch}
+                disabled={killSwitchLoading}
+                style={{ fontSize: '0.85rem', padding: '0.5rem 1rem', whiteSpace: 'nowrap' }}
+              >
+                {killSwitchLoading ? 'Updating...' : killSwitchEnabled ? '✅ Disengage Kill Switch' : '🛑 ENGAGE KILL SWITCH'}
+              </button>
+            </div>
           </div>
 
           {success && <div style={styles.success}>{success}</div>}
           {error && <div style={styles.error}>{error}</div>}
 
           <button type="submit" className="btn btn-primary" style={styles.saveBtn} disabled={loading}>
-            {loading ? 'Saving...' : '💾 Save & Connect WhatsApp Business'}
+            {loading ? 'Saving...' : '💾 Save & Apply Operating Mode & Policies'}
           </button>
         </form>
       </div>
@@ -367,5 +485,24 @@ const styles = {
     marginTop: '1rem',
     height: '46px',
     width: '100%',
+  },
+  emergencyKillBanner: {
+    background: 'rgba(239, 68, 68, 0.15)',
+    border: '2px solid #ef4444',
+    borderRadius: '8px',
+    padding: '1rem',
+    color: '#fee2e2',
+    animation: 'pulse 2s infinite',
+  },
+  radioLabel: {
+    flex: 1,
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '0.6rem',
+    padding: '0.85rem',
+    borderRadius: '8px',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
   },
 };

@@ -189,7 +189,7 @@ export default function Conversations({ token, brandPhone, userEmail }) {
 
   const fetchPendingApprovals = async () => {
     try {
-      const res = await apiFetch('/api/conversations/approvals/pending');
+      const res = await apiFetch('/api/approvals?status=WAITING_APPROVAL');
       if (res.ok) {
         const data = await res.json();
         setPendingApprovals(data);
@@ -200,8 +200,8 @@ export default function Conversations({ token, brandPhone, userEmail }) {
   };
 
   const handleToggleTakeover = async (id, currentStatus) => {
-    // Toggle between AI_ACTIVE/WAITING_APPROVAL and OWNER_ACTIVE
-    const nextStatus = (currentStatus === 'AI_ACTIVE' || currentStatus === 'WAITING_APPROVAL') ? 'OWNER_ACTIVE' : 'AI_ACTIVE';
+    // Toggle between AI_ACTIVE/WAITING_APPROVAL and HUMAN_TAKEOVER
+    const nextStatus = (currentStatus === 'AI_ACTIVE' || currentStatus === 'WAITING_APPROVAL') ? 'HUMAN_TAKEOVER' : 'AI_ACTIVE';
     try {
       const res = await apiFetch(`/api/conversations/${id}/takeover?status_val=${nextStatus}`, {
         method: 'POST'
@@ -218,12 +218,17 @@ export default function Conversations({ token, brandPhone, userEmail }) {
 
   const handleRespondToApproval = async (approvalId, action, text = '') => {
     try {
-      const res = await apiFetch(`/api/conversations/approvals/${approvalId}/respond`, {
+      const payload = { action };
+      if (action === 'edit_and_send' || action === 'edit') {
+        payload.action = 'edit_and_send';
+        payload.edited_response = text;
+      }
+      const res = await apiFetch(`/api/approvals/${approvalId}/respond`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ action: action, edited_response: text })
+        body: JSON.stringify(payload)
       });
       if (res.ok) {
         setEditApprovalText('');
@@ -381,9 +386,9 @@ export default function Conversations({ token, brandPhone, userEmail }) {
             <button 
               style={{
                 ...styles.tabButton,
-                ...(statusFilter === 'OWNER_ACTIVE' ? styles.tabButtonActive : {})
+                ...(statusFilter === 'HUMAN_TAKEOVER' ? styles.tabButtonActive : {})
               }}
-              onClick={() => setStatusFilter('OWNER_ACTIVE')}
+              onClick={() => setStatusFilter('HUMAN_TAKEOVER')}
             >
               Human Agent
             </button>
@@ -582,8 +587,8 @@ export default function Conversations({ token, brandPhone, userEmail }) {
                   />
                   <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
                     <button type="button" className="btn btn-secondary" style={{ borderColor: 'var(--accent-primary)', color: 'var(--accent-primary)' }} onClick={() => handleRespondToApproval(approval.id, 'reject')}>Reject (Takeover)</button>
-                    <button type="button" className="btn btn-secondary" onClick={() => handleRespondToApproval(approval.id, 'edit', editApprovalText || approval.proposed_response)}>Edit & Send</button>
-                    <button type="button" className="btn btn-primary" onClick={() => handleRespondToApproval(approval.id, 'approve')}>Approve</button>
+                    <button type="button" className="btn btn-secondary" onClick={() => handleRespondToApproval(approval.id, 'edit_and_send', editApprovalText || approval.proposed_response)}>✏️ Edit & Send</button>
+                    <button type="button" className="btn btn-primary" onClick={() => handleRespondToApproval(approval.id, 'approve')}>✓ Approve & Send</button>
                   </div>
                 </div>
               );
