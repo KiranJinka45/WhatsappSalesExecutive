@@ -40,7 +40,6 @@ def upgrade() -> None:
         op.execute(f"""
         CREATE POLICY {table_name}_tenant_insert_policy ON {table_name}
         FOR INSERT WITH CHECK (
-            current_setting('app.current_tenant', true) = '' OR
             {org_col} = nullif(current_setting('app.current_tenant', true), '')::uuid
         );
         """)
@@ -48,10 +47,8 @@ def upgrade() -> None:
         op.execute(f"""
         CREATE POLICY {table_name}_tenant_update_policy ON {table_name}
         FOR UPDATE USING (
-            current_setting('app.current_tenant', true) = '' OR
             {org_col} = nullif(current_setting('app.current_tenant', true), '')::uuid
         ) WITH CHECK (
-            current_setting('app.current_tenant', true) = '' OR
             {org_col} = nullif(current_setting('app.current_tenant', true), '')::uuid
         );
         """)
@@ -59,7 +56,6 @@ def upgrade() -> None:
         op.execute(f"""
         CREATE POLICY {table_name}_tenant_select_policy ON {table_name}
         FOR SELECT USING (
-            current_setting('app.current_tenant', true) = '' OR
             {org_col} = nullif(current_setting('app.current_tenant', true), '')::uuid
         );
         """)
@@ -67,7 +63,6 @@ def upgrade() -> None:
         op.execute(f"""
         CREATE POLICY {table_name}_tenant_delete_policy ON {table_name}
         FOR DELETE USING (
-            current_setting('app.current_tenant', true) = '' OR
             {org_col} = nullif(current_setting('app.current_tenant', true), '')::uuid
         );
         """)
@@ -77,28 +72,23 @@ def upgrade() -> None:
     op.execute("ALTER TABLE messages FORCE ROW LEVEL SECURITY;")
     op.execute("""
     CREATE POLICY messages_tenant_insert_policy ON messages FOR INSERT WITH CHECK (
-        current_setting('app.current_tenant', true) = '' OR
         conversation_id IN (SELECT id FROM conversations WHERE organization_id = nullif(current_setting('app.current_tenant', true), '')::uuid)
     );
     """)
     op.execute("""
     CREATE POLICY messages_tenant_update_policy ON messages FOR UPDATE USING (
-        current_setting('app.current_tenant', true) = '' OR
         conversation_id IN (SELECT id FROM conversations WHERE organization_id = nullif(current_setting('app.current_tenant', true), '')::uuid)
     ) WITH CHECK (
-        current_setting('app.current_tenant', true) = '' OR
         conversation_id IN (SELECT id FROM conversations WHERE organization_id = nullif(current_setting('app.current_tenant', true), '')::uuid)
     );
     """)
     op.execute("""
     CREATE POLICY messages_tenant_select_policy ON messages FOR SELECT USING (
-        current_setting('app.current_tenant', true) = '' OR
         conversation_id IN (SELECT id FROM conversations WHERE organization_id = nullif(current_setting('app.current_tenant', true), '')::uuid)
     );
     """)
     op.execute("""
     CREATE POLICY messages_tenant_delete_policy ON messages FOR DELETE USING (
-        current_setting('app.current_tenant', true) = '' OR
         conversation_id IN (SELECT id FROM conversations WHERE organization_id = nullif(current_setting('app.current_tenant', true), '')::uuid)
     );
     """)
@@ -108,28 +98,23 @@ def upgrade() -> None:
     op.execute("ALTER TABLE order_items FORCE ROW LEVEL SECURITY;")
     op.execute("""
     CREATE POLICY order_items_tenant_insert_policy ON order_items FOR INSERT WITH CHECK (
-        current_setting('app.current_tenant', true) = '' OR
         order_id IN (SELECT id FROM orders WHERE organization_id = nullif(current_setting('app.current_tenant', true), '')::uuid)
     );
     """)
     op.execute("""
     CREATE POLICY order_items_tenant_update_policy ON order_items FOR UPDATE USING (
-        current_setting('app.current_tenant', true) = '' OR
         order_id IN (SELECT id FROM orders WHERE organization_id = nullif(current_setting('app.current_tenant', true), '')::uuid)
     ) WITH CHECK (
-        current_setting('app.current_tenant', true) = '' OR
         order_id IN (SELECT id FROM orders WHERE organization_id = nullif(current_setting('app.current_tenant', true), '')::uuid)
     );
     """)
     op.execute("""
     CREATE POLICY order_items_tenant_select_policy ON order_items FOR SELECT USING (
-        current_setting('app.current_tenant', true) = '' OR
         order_id IN (SELECT id FROM orders WHERE organization_id = nullif(current_setting('app.current_tenant', true), '')::uuid)
     );
     """)
     op.execute("""
     CREATE POLICY order_items_tenant_delete_policy ON order_items FOR DELETE USING (
-        current_setting('app.current_tenant', true) = '' OR
         order_id IN (SELECT id FROM orders WHERE organization_id = nullif(current_setting('app.current_tenant', true), '')::uuid)
     );
     """)
@@ -139,7 +124,6 @@ def upgrade() -> None:
     op.execute("ALTER TABLE recommendation_feedback FORCE ROW LEVEL SECURITY;")
     op.execute("""
     CREATE POLICY recommendation_feedback_tenant_insert_policy ON recommendation_feedback FOR INSERT WITH CHECK (
-        current_setting('app.current_tenant', true) = '' OR
         message_id IN (
             SELECT m.id FROM messages m
             JOIN conversations c ON m.conversation_id = c.id
@@ -149,14 +133,12 @@ def upgrade() -> None:
     """)
     op.execute("""
     CREATE POLICY recommendation_feedback_tenant_update_policy ON recommendation_feedback FOR UPDATE USING (
-        current_setting('app.current_tenant', true) = '' OR
         message_id IN (
             SELECT m.id FROM messages m
             JOIN conversations c ON m.conversation_id = c.id
             WHERE c.organization_id = nullif(current_setting('app.current_tenant', true), '')::uuid
         )
     ) WITH CHECK (
-        current_setting('app.current_tenant', true) = '' OR
         message_id IN (
             SELECT m.id FROM messages m
             JOIN conversations c ON m.conversation_id = c.id
@@ -166,7 +148,6 @@ def upgrade() -> None:
     """)
     op.execute("""
     CREATE POLICY recommendation_feedback_tenant_select_policy ON recommendation_feedback FOR SELECT USING (
-        current_setting('app.current_tenant', true) = '' OR
         message_id IN (
             SELECT m.id FROM messages m
             JOIN conversations c ON m.conversation_id = c.id
@@ -176,7 +157,6 @@ def upgrade() -> None:
     """)
     op.execute("""
     CREATE POLICY recommendation_feedback_tenant_delete_policy ON recommendation_feedback FOR DELETE USING (
-        current_setting('app.current_tenant', true) = '' OR
         message_id IN (
             SELECT m.id FROM messages m
             JOIN conversations c ON m.conversation_id = c.id
