@@ -148,50 +148,50 @@ export default function App() {
   return (
     <div style={styles.appContainer}>
       {/* Dashboard Top Header Navigation Bar */}
-      <header className="glass-panel" style={styles.header}>
+      <header className="glass-panel dashboard-header-container" style={styles.header}>
         <div style={styles.headerBrand}>
           <span style={styles.logo}>⚡</span>
-          <div>
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.35rem' }}>
             <h1 style={styles.brandTitle}>{brandName}</h1>
-            <span className="badge badge-ai" style={{ fontSize: '0.65rem', marginLeft: '0.5rem' }}>Active</span>
+            <span className="badge badge-ai" style={{ fontSize: '0.65rem' }}>Active</span>
           </div>
         </div>
 
-        <nav style={styles.nav}>
+        <nav className="dashboard-nav-bar" style={styles.nav}>
           <button
             className={`btn ${activeTab === 'inbox' ? 'btn-primary' : 'btn-secondary'}`}
             style={styles.navBtn}
             onClick={() => setActiveTab('inbox')}
           >
-            Chats
+            💬 Chats
           </button>
           <button
             className={`btn ${activeTab === 'catalog' ? 'btn-primary' : 'btn-secondary'}`}
             style={styles.navBtn}
             onClick={() => setActiveTab('catalog')}
           >
-            Catalog
+            👗 Catalog
           </button>
           <button
             className={`btn ${activeTab === 'settings' ? 'btn-primary' : 'btn-secondary'}`}
             style={styles.navBtn}
             onClick={() => setActiveTab('settings')}
           >
-            Settings
+            ⚙️ Settings
           </button>
           <button
             className={`btn ${activeTab === 'analytics' ? 'btn-primary' : 'btn-secondary'}`}
             style={styles.navBtn}
             onClick={() => setActiveTab('analytics')}
           >
-            Analytics
+            📊 Analytics
           </button>
           <button
             className={`btn ${activeTab === 'integrations' ? 'btn-primary' : 'btn-secondary'}`}
             style={styles.navBtn}
             onClick={() => setActiveTab('integrations')}
           >
-            Integrations
+            🔌 Integrations
           </button>
         </nav>
 

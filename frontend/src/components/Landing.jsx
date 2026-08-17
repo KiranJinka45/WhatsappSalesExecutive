@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 export default function Landing({ onNavigate }) {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   const handleScroll = (id) => {
     const el = document.getElementById(id);
     if (el) {
@@ -8,10 +10,15 @@ export default function Landing({ onNavigate }) {
     }
   };
 
+  const handleNavClick = (id) => {
+    handleScroll(id);
+    setMobileMenuOpen(false);
+  };
+
   return (
     <div style={styles.container}>
       {/* Public Header */}
-      <header className="glass-panel" style={styles.header}>
+      <header className="glass-panel landing-header" style={styles.header}>
         <div style={styles.logoGroup}>
           <span style={styles.logoIcon}>🛍️</span>
           <span style={styles.logoText}>
@@ -19,13 +26,15 @@ export default function Landing({ onNavigate }) {
           </span>
         </div>
 
-        <nav style={styles.navLinks}>
+        {/* Desktop Navigation Links */}
+        <nav className="desktop-only" style={styles.navLinks}>
           <button style={styles.navLinkBtn} onClick={() => handleScroll('services')}>Services</button>
           <button style={styles.navLinkBtn} onClick={() => handleScroll('features')}>How It Works</button>
           <button style={styles.navLinkBtn} onClick={() => handleScroll('pricing')}>Pricing</button>
         </nav>
 
-        <div style={styles.headerActions}>
+        {/* Desktop Actions */}
+        <div className="desktop-only" style={styles.headerActions}>
           <button 
             className="btn btn-secondary" 
             style={styles.headerBtn} 
@@ -41,20 +50,81 @@ export default function Landing({ onNavigate }) {
             Create Business Account
           </button>
         </div>
+
+        {/* Mobile Hamburger Toggle Button */}
+        <button 
+          className="mobile-only mobile-nav-toggle"
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          aria-label="Toggle Navigation Menu"
+          aria-expanded={mobileMenuOpen}
+        >
+          {mobileMenuOpen ? '✕' : '☰'}
+        </button>
       </header>
+
+      {/* Mobile Slide-Down Menu Card */}
+      {mobileMenuOpen && (
+        <>
+          <div 
+            className="mobile-menu-overlay" 
+            onClick={() => setMobileMenuOpen(false)} 
+          />
+          <div className="mobile-menu-card animate-fade-in" role="dialog" aria-label="Mobile Navigation Menu">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '0.5rem', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
+              <span style={{ fontSize: '0.85rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)' }}>
+                Navigation Menu
+              </span>
+              <button 
+                onClick={() => setMobileMenuOpen(false)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '1.25rem', cursor: 'pointer', padding: '0.25rem' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <button className="mobile-menu-link" onClick={() => handleNavClick('services')}>
+              <span>🛍️</span>
+              <span>Services & Features</span>
+            </button>
+            <button className="mobile-menu-link" onClick={() => handleNavClick('features')}>
+              <span>⚡</span>
+              <span>How It Works (10-Min Setup)</span>
+            </button>
+            <button className="mobile-menu-link" onClick={() => handleNavClick('pricing')}>
+              <span>💳</span>
+              <span>Pricing & Plans</span>
+            </button>
+
+            <div className="mobile-menu-actions">
+              <button 
+                className="btn btn-secondary mobile-menu-btn" 
+                onClick={() => { setMobileMenuOpen(false); onNavigate('login'); }}
+              >
+                Sign In to Dashboard
+              </button>
+              <button 
+                className="btn btn-primary mobile-menu-btn" 
+                onClick={() => { setMobileMenuOpen(false); onNavigate('signup'); }}
+              >
+                Create Business Account
+              </button>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Hero Section */}
       <section style={styles.heroSection}>
         <div style={styles.heroGlow}></div>
         <div style={styles.heroContent}>
           <span className="badge badge-ai" style={styles.heroBadge}>v1.0 Pilot Release</span>
-          <h1 style={styles.heroTitle}>
+          <h1 className="hero-responsive-title" style={styles.heroTitle}>
             Your Autonomous <span style={{ color: 'var(--accent-secondary)' }}>AI Sales Employee</span> for Clothing Brands
           </h1>
-          <p style={styles.heroSubhead}>
+          <p className="hero-responsive-subhead" style={styles.heroSubhead}>
             Meet Closely AI. It connects to your WhatsApp business account, understands customer questions, showcases sarees & apparel directly from your catalog, and guides buyers to payment—24/7.
           </p>
-          <div style={styles.heroActions}>
+          <div className="hero-actions-responsive" style={styles.heroActions}>
             <button 
               className="btn btn-primary btn-lg" 
               style={styles.heroBtnMain} 

@@ -198,6 +198,16 @@ h1, h2, h3, h4 {
   to { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes slideDownMenu {
+  from { opacity: 0; transform: translateY(-12px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes overlayFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 .animate-fade-in {
   animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
@@ -206,3 +216,180 @@ h1, h2, h3, h4 {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
 }
+
+/* ==========================================================================
+   Responsive & Enterprise SaaS Navigation Utility Classes
+   ========================================================================== */
+
+.desktop-only {
+  display: flex !important;
+}
+
+.mobile-only {
+  display: none !important;
+}
+
+/* Hamburger & Mobile Toggle Buttons */
+.mobile-nav-toggle {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--glass-border);
+  color: var(--text-primary);
+  width: 44px;
+  height: 44px;
+  border-radius: var(--border-radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 1.25rem;
+  transition: all 0.2s ease;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.mobile-nav-toggle:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--accent-primary);
+}
+
+/* Mobile Menu Backdrop & Card */
+.mobile-menu-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(4, 7, 13, 0.82);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 1999;
+  animation: overlayFadeIn 0.2s ease forwards;
+}
+
+.mobile-menu-card {
+  position: fixed;
+  top: 72px;
+  left: 1rem;
+  right: 1rem;
+  background: #0f1420;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--border-radius-lg);
+  padding: 1.25rem;
+  box-shadow: 0 20px 40px -8px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(99, 102, 241, 0.15);
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  animation: slideDownMenu 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  max-height: calc(100vh - 90px);
+  overflow-y: auto;
+}
+
+.mobile-menu-link {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.85rem 1rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: var(--border-radius-md);
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  min-height: 48px;
+}
+
+.mobile-menu-link:hover, .mobile-menu-link:active {
+  background: rgba(99, 102, 241, 0.12);
+  border-color: var(--accent-primary);
+  color: #fff;
+  transform: translateX(3px);
+}
+
+.mobile-menu-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mobile-menu-btn {
+  width: 100%;
+  min-height: 48px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ==========================================================================
+   Responsive Breakpoints
+   ========================================================================== */
+
+@media (max-width: 768px) {
+  .desktop-only {
+    display: none !important;
+  }
+
+  .mobile-only {
+    display: flex !important;
+  }
+
+  /* Header adjustments */
+  .landing-header {
+    padding: 0.75rem 1.25rem !important;
+  }
+
+  /* Hero section adjustments */
+  .hero-responsive-title {
+    font-size: 2.15rem !important;
+    line-height: 1.2 !important;
+  }
+
+  .hero-responsive-subhead {
+    font-size: 0.95rem !important;
+    line-height: 1.5 !important;
+  }
+
+  .hero-actions-responsive {
+    flex-direction: column !important;
+    width: 100% !important;
+  }
+
+  .hero-actions-responsive button {
+    width: 100% !important;
+    min-height: 48px !important;
+  }
+
+  /* Dashboard Nav Bar Horizontal Scroll */
+  .dashboard-nav-bar {
+    overflow-x: auto !important;
+    padding: 0.5rem !important;
+    gap: 0.5rem !important;
+    justify-content: flex-start !important;
+    -webkit-overflow-scrolling: touch;
+    width: 100% !important;
+  }
+
+  .dashboard-nav-bar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .dashboard-header-container {
+    flex-wrap: wrap !important;
+    gap: 0.75rem !important;
+    padding: 0.75rem 1rem !important;
+  }
+}
+
+@media (min-width: 769px) {
+  .landing-header {
+    padding: 0.85rem 3rem !important;
+  }
+}
+
