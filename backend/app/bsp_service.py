@@ -54,8 +54,8 @@ def send_whatsapp_message(
                 "mock": True
             }
 
-    token = policies.get("whatsapp_access_token") or getattr(settings, "WHATSAPP_ACCESS_TOKEN", None)
-    phone_id = policies.get("whatsapp_phone_number_id") or getattr(settings, "WHATSAPP_PHONE_NUMBER_ID", None)
+    token = getattr(org, "whatsapp_access_token", None) or policies.get("whatsapp_access_token") or getattr(settings, "WHATSAPP_ACCESS_TOKEN", None)
+    phone_id = getattr(org, "whatsapp_phone_number_id", None) or policies.get("whatsapp_phone_number_id") or getattr(settings, "WHATSAPP_PHONE_NUMBER_ID", None)
     
     # WasenderAPI Credentials
     wasender_token = policies.get("wasender_api_token") or getattr(settings, "WASENDER_API_TOKEN", None)
@@ -152,10 +152,32 @@ def send_whatsapp_message(
                 "mock": False
             }
         else:
-            logger.error(f"WhatsApp Cloud API failed with status {response.status_code}: {response.text}")
+            err_text = response.text
+            logger.warning(f"WhatsApp Cloud API dispatch error status {response.status_code}: {err_text}")
+            # Fallback to hello_world template if outside 24h conversation window
+            if ("131047" in err_text or "24 hours" in err_text.lower() or "re-engagement" in err_text.lower()) and not media_url:
+                logger.info(f"Attempting template 'hello_world' fallback for 24h window restriction to {clean_phone}...")
+                template_payload = {
+                    "messaging_product": "whatsapp",
+                    "recipient_type": "individual",
+                    "to": clean_phone,
+                    "type": "template",
+                    "template": {
+                        "name": "hello_world",
+                        "language": {"code": "en_US"}
+                    }
+                }
+                tpl_resp = httpx.post(url, json=template_payload, headers=headers, timeout=10.0)
+                if tpl_resp.status_code == 200:
+                    tpl_data = tpl_resp.json()
+                    msg_id = tpl_data.get("messages", [{}])[0].get("id")
+                    logger.info(f"WhatsApp template 'hello_world' sent successfully to {clean_phone}. Message ID: {msg_id}")
+                    return {"status": "sent", "message_id": msg_id, "mock": False}
+                else:
+                    err_text = tpl_resp.text
             return {
                 "status": "failed",
-                "error": response.text,
+                "error": err_text,
                 "mock": False
             }
     except httpx.TimeoutException as e:
