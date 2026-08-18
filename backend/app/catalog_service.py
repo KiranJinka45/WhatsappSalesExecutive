@@ -43,7 +43,13 @@ def generate_product_embedding_task(db_session_factory, product_id: str):
     Background task to generate product vector embedding and image embedding asynchronously.
     """
     db = db_session_factory()
+    db.is_admin = True
     token = tenant_var.set(None)  # Bypass tenant filtering to query globally by ID
+    try:
+        from sqlalchemy import text
+        db.execute(text("SET LOCAL app.current_tenant = ''"))
+    except Exception:
+        pass
     try:
         product = db.query(models.Product).filter(models.Product.id == product_id).first()
         if not product:
@@ -123,7 +129,13 @@ def backfill_missing_image_embeddings(db_session_factory):
     and runs the embedding generator task for them in a background thread.
     """
     db = db_session_factory()
+    db.is_admin = True
     token = tenant_var.set(None)
+    try:
+        from sqlalchemy import text
+        db.execute(text("SET LOCAL app.current_tenant = ''"))
+    except Exception:
+        pass
     try:
         # Find products that have image_urls but image_embedding is NULL or image_embedding_status is pending/failed
         from sqlalchemy import and_, or_
@@ -165,6 +177,8 @@ def parse_and_sync_catalog(
     and schedules vector embedding updates asynchronously.
     Supports 'atomic' (all-or-nothing) and 'partial' (skip invalid rows) import modes.
     """
+    db.organization_id = org_id
+    tenant_var.set(org_id)
     # 1. Validate File Size (Max 5MB)
     if len(file_content) > 5 * 1024 * 1024:
         raise ValueError("File size exceeds the maximum limit of 5MB.")
