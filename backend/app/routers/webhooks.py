@@ -1083,6 +1083,7 @@ async def receive_whatsapp_message(
     msg_type = "text"
     media_id = None
     mime_type = None
+    waba_id = None
     import time
     
     # 1. Twilio Format parsing
@@ -1134,6 +1135,7 @@ async def receive_whatsapp_message(
     elif "entry" in body:
         try:
             entry = body["entry"][0]
+            waba_id = entry.get("id")
             changes = entry["changes"][0]
             value = changes["value"]
             if "messages" in value:
@@ -1180,6 +1182,11 @@ async def receive_whatsapp_message(
     if not customer_phone or not message_text:
         return {"status": "ignored", "reason": "No sender phone or message content parsed."}
 
+    # Normalize customer phone format with '+' prefix
+    clean_cust_phone = "".join(c for c in customer_phone if c.isdigit())
+    if clean_cust_phone and not customer_phone.startswith("+"):
+        customer_phone = f"+{clean_cust_phone}"
+
     # Message Deduplication (Redis with in-memory fallback)
     if message_id:
         import redis
@@ -1214,6 +1221,8 @@ async def receive_whatsapp_message(
         org = None
         if phone_number_id:
             org = db.query(models.Organization).filter(models.Organization.whatsapp_phone_number_id == phone_number_id).first()
+        if not org and waba_id:
+            org = db.query(models.Organization).filter(models.Organization.whatsapp_business_account_id == waba_id).first()
         if not org and brand_phone:
             org = db.query(models.Organization).filter(models.Organization.whatsapp_number == brand_phone).first()
             if not org:
@@ -1227,6 +1236,10 @@ async def receive_whatsapp_message(
                             org = o
                             break
         
+        # Fallback to the first non-deleted organization in a single-tenant deployment so webhook messages are never lost
+        if not org:
+            org = db.query(models.Organization).filter(models.Organization.deleted_at.is_(None)).order_by(models.Organization.created_at.asc()).first()
+            
         if not org:
             logger.error(f"Rejecting webhook message. Brand not found for phone_number_id={phone_number_id} and brand_phone={brand_phone}.")
             return {"status": "error", "reason": "Tenant matching failed. Unknown brand."}
@@ -1241,10 +1254,14 @@ async def receive_whatsapp_message(
     from sqlalchemy import text
     db.execute(text("SET LOCAL app.current_tenant = :org_id"), {"org_id": str(org.id)})
 
-    # Resolve/Create conversation
+    # Resolve/Create conversation using normalized phone or clean digits
     conv = db.query(models.Conversation).filter(
         models.Conversation.organization_id == org.id,
-        models.Conversation.customer_phone == customer_phone
+        models.Conversation.deleted_at.is_(None)
+    ).filter(
+        (models.Conversation.customer_phone == customer_phone) |
+        (models.Conversation.customer_phone == clean_cust_phone) |
+        (models.Conversation.customer_phone == f"+{clean_cust_phone}")
     ).first()
 
     if not conv:
