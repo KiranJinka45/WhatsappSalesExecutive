@@ -36,6 +36,20 @@ logging.basicConfig(level=logging.INFO, handlers=[handler], force=True)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Auto-fix legacy database image URLs if domain had typo
+    if os.environ.get("TESTING") != "true":
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("""
+                    UPDATE products 
+                    SET image_urls = string_to_array(replace(array_to_string(image_urls, ','), 'qclmaiqfppunrodjpka.supabase.co', 'qclmaiqqfppunrodjpka.supabase.co'), ','),
+                        image_embedding_status = 'pending'
+                    WHERE array_to_string(image_urls, ',') LIKE '%qclmaiqfppunrodjpka.supabase.co%';
+                """))
+                conn.commit()
+        except Exception as e:
+            logger.debug(f"Production image URL domain migration skipped: {e}")
+
     # In testing and production, schema is managed cleanly by migrations/test fixtures.
     # Lifespan dynamic DDL is only needed as a convenience fallback in local development.
     if os.environ.get("TESTING") != "true" and getattr(settings, "APP_ENV", "production") == "development":
