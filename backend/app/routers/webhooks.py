@@ -1047,6 +1047,7 @@ async def receive_whatsapp_message(
     Decoupled processing via BackgroundTasks.
     """
     payload_bytes = await request.body()
+    logger.info(f"Incoming POST to /api/webhooks/whatsapp. Payload size: {len(payload_bytes)} bytes. X-Hub-Signature-256: {x_hub_signature_256}")
     
     # Signature Verification
     if not settings.TESTING:
@@ -1058,10 +1059,15 @@ async def receive_whatsapp_message(
                 raise HTTPException(status_code=401, detail="Authentication credentials not provided")
         else:
             if not x_hub_signature_256 or not verify_meta_signature(payload_bytes, x_hub_signature_256, settings.WHATSAPP_APP_SECRET):
+                computed_sig = hmac.new(
+                    settings.WHATSAPP_APP_SECRET.encode('utf-8'),
+                    payload_bytes,
+                    hashlib.sha256
+                ).hexdigest()
                 if settings.APP_ENV == "development":
-                    logger.warning("Invalid signature in development, proceeding anyway.")
+                    logger.warning(f"Invalid signature in development (computed: sha256={computed_sig}, received: {x_hub_signature_256}), proceeding anyway.")
                 else:
-                    logger.warning("Invalid or missing webhook signature rejected.")
+                    logger.warning(f"Invalid or missing webhook signature rejected. Computed: sha256={computed_sig}, received: {x_hub_signature_256}")
                     raise HTTPException(status_code=403, detail="Invalid or missing signature")
 
     try:
