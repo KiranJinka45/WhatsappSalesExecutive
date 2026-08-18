@@ -278,14 +278,14 @@ class ApprovalRequestOut(BaseModel):
     llm_model: Optional[str] = None
     prompt_version: Optional[str] = None
     retrieval_ids: Optional[List[str]] = None
-    grounding_score: Optional[Decimal] = Decimal('0.00')
+    grounding_score: Optional[float] = 0.0
     decision_engine_version: Optional[str] = None
     rule_triggered: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, validation_alias="metadata_", serialization_alias="metadata")
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
 class ApprovalRequestRespond(BaseModel):
