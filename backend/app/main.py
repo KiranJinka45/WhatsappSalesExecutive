@@ -36,6 +36,24 @@ logging.basicConfig(level=logging.INFO, handlers=[handler], force=True)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Programmatic database migrations upgrade on startup (bypasses Render startCommand dashboard overrides)
+    if os.environ.get("TESTING") != "true":
+        try:
+            from alembic.config import Config
+            from alembic import command
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            alembic_ini_path = os.path.join(base_dir, "alembic.ini")
+            if os.path.exists(alembic_ini_path):
+                logger.info(f"Running programmatic database migrations from {alembic_ini_path}...")
+                alembic_cfg = Config(alembic_ini_path)
+                alembic_cfg.set_main_option("sqlalchemy.url", settings.DATABASE_URL.replace("postgres://", "postgresql://").replace("%", "%%"))
+                command.upgrade(alembic_cfg, "head")
+                logger.info("Programmatic database migrations completed successfully!")
+            else:
+                logger.warning(f"alembic.ini not found at {alembic_ini_path}. Skipping programmatic migrations.")
+        except Exception as migration_err:
+            logger.error(f"Failed to run programmatic database migrations: {migration_err}", exc_info=True)
+
     # Auto-fix legacy database image URLs if domain had typo
     if os.environ.get("TESTING") != "true":
         try:
