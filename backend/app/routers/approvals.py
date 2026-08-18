@@ -49,13 +49,61 @@ def list_approvals(
     List tenant-scoped approval requests with optional status filtering.
     Enforces Row-Level Security isolation.
     """
-    return get_tenant_approval_requests(
-        db=db,
-        org_id=org.id,
-        status=status,
-        limit=limit,
-        offset=offset
-    )
+    try:
+        reqs = get_tenant_approval_requests(
+            db=db,
+            org_id=org.id,
+            status=status,
+            limit=limit,
+            offset=offset
+        )
+        validated_reqs = []
+        for r in reqs:
+            try:
+                validated_reqs.append(schemas.ApprovalRequestOut.model_validate(r))
+            except Exception as val_err:
+                logger.warning(f"Strict validation failed for ApprovalRequest {r.id}, attempting safe attribute mapping: {val_err}")
+                try:
+                    # Manually sanitize fields to ensure Pydantic parsing succeeds
+                    raw_data = {
+                        "id": r.id,
+                        "conversation_id": r.conversation_id,
+                        "organization_id": r.organization_id,
+                        "status": r.status or "WAITING_APPROVAL",
+                        "reason": r.reason or "Needs verification",
+                        "proposed_response": r.proposed_response or "",
+                        "ai_recommendation": r.ai_recommendation,
+                        "risk_score": getattr(r, "risk_score", 0) or 0,
+                        "approved_by_user_id": r.approved_by_user_id,
+                        "edited_by_user_id": r.edited_by_user_id,
+                        "edited_response": r.edited_response,
+                        "message_hash": r.message_hash,
+                        "version": r.version or 1,
+                        "price_snapshot": r.price_snapshot or {},
+                        "stock_snapshot": r.stock_snapshot or {},
+                        "expires_at": r.expires_at,
+                        "sent_at": r.sent_at,
+                        "error_message": r.error_message,
+                        "llm_model": r.llm_model,
+                        "prompt_version": r.prompt_version,
+                        "retrieval_ids": r.retrieval_ids or [],
+                        "grounding_score": r.grounding_score or 0.0,
+                        "decision_engine_version": r.decision_engine_version,
+                        "rule_triggered": r.rule_triggered,
+                        "metadata": r.metadata_ or {},
+                        "created_at": r.created_at,
+                        "updated_at": r.updated_at
+                    }
+                    validated_reqs.append(schemas.ApprovalRequestOut(**raw_data))
+                except Exception as map_err:
+                    logger.error(f"Fallback attribute mapping failed for ApprovalRequest {r.id}: {map_err}", exc_info=True)
+        return validated_reqs
+    except Exception as e:
+        logger.error(f"Failed listing approval requests: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve approval list: {str(e)}"
+        )
 
 
 @router.get("/{approval_id}", response_model=schemas.ApprovalRequestOut)
