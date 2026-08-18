@@ -319,25 +319,22 @@ def parse_and_sync_catalog(
 
     products_created = 0
     products_updated = 0
+    products_to_embed = []
+
+    # Pre-fetch existing categories and products to avoid per-row query overhead
+    existing_cats = {c.name.lower(): c for c in db.query(models.Category).filter(models.Category.organization_id == org_id).all()}
+    existing_prods = {p.sku: p for p in db.query(models.Product).filter(models.Product.organization_id == org_id).all()}
 
     for row_idx, valid_row in rows_to_process:
-        # Create/Find category
-        category = db.query(models.Category).filter(
-            models.Category.organization_id == org_id,
-            models.Category.name.ilike(valid_row.category_name)
-        ).first()
-
+        cat_key = valid_row.category_name.lower()
+        category = existing_cats.get(cat_key)
         if not category:
             category = models.Category(organization_id=org_id, name=valid_row.category_name)
             db.add(category)
-            db.commit()
-            db.refresh(category)
+            db.flush()
+            existing_cats[cat_key] = category
 
-        # Search existing product
-        product = db.query(models.Product).filter(
-            models.Product.organization_id == org_id,
-            models.Product.sku == valid_row.sku
-        ).first()
+        product = existing_prods.get(valid_row.sku)
 
         if product:
             product.category_id = category.id
@@ -351,9 +348,9 @@ def parse_and_sync_catalog(
             product.stock_count = valid_row.stock_count
             product.image_urls = valid_row.image_urls
             product.video_urls = valid_row.video_urls
-            # Re-trigger embedding generation asynchronously
             product.embedding_status = "pending"
             products_updated += 1
+            products_to_embed.append(product)
         else:
             product = models.Product(
                 organization_id=org_id,
@@ -373,10 +370,13 @@ def parse_and_sync_catalog(
             )
             db.add(product)
             products_created += 1
+            existing_prods[valid_row.sku] = product
+            products_to_embed.append(product)
 
-        db.commit()
-        db.refresh(product)
-        # Schedule the vector embedding generator task
+    db.commit()
+
+    # Schedule vector embedding tasks in background AFTER single transaction commit
+    for product in products_to_embed:
         background_tasks.add_task(generate_product_embedding_task, SessionLocal, str(product.id))
 
     status_msg = "success" if not errors else "partial_success"
