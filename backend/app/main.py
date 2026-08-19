@@ -120,6 +120,46 @@ async def lifespan(app: FastAPI):
                 if 'rule_triggered' not in columns:
                     logger.info("Auto-repair: Adding 'rule_triggered' to approval_requests...")
                     conn.execute(text("ALTER TABLE approval_requests ADD COLUMN rule_triggered VARCHAR(100)"))
+
+                if 'approved_by_user_id' not in columns:
+                    logger.info("Auto-repair: Adding 'approved_by_user_id' to approval_requests...")
+                    conn.execute(text("ALTER TABLE approval_requests ADD COLUMN approved_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL"))
+
+                if 'edited_by_user_id' not in columns:
+                    logger.info("Auto-repair: Adding 'edited_by_user_id' to approval_requests...")
+                    conn.execute(text("ALTER TABLE approval_requests ADD COLUMN edited_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL"))
+
+                if 'edited_response' not in columns:
+                    logger.info("Auto-repair: Adding 'edited_response' to approval_requests...")
+                    conn.execute(text("ALTER TABLE approval_requests ADD COLUMN edited_response TEXT"))
+
+                if 'message_hash' not in columns:
+                    logger.info("Auto-repair: Adding 'message_hash' to approval_requests...")
+                    conn.execute(text("ALTER TABLE approval_requests ADD COLUMN message_hash VARCHAR(64)"))
+
+                if 'version' not in columns:
+                    logger.info("Auto-repair: Adding 'version' to approval_requests...")
+                    conn.execute(text("ALTER TABLE approval_requests ADD COLUMN version INTEGER DEFAULT 1"))
+
+                if 'price_snapshot' not in columns:
+                    logger.info("Auto-repair: Adding 'price_snapshot' to approval_requests...")
+                    conn.execute(text("ALTER TABLE approval_requests ADD COLUMN price_snapshot JSONB DEFAULT '{}'::jsonb"))
+
+                if 'stock_snapshot' not in columns:
+                    logger.info("Auto-repair: Adding 'stock_snapshot' to approval_requests...")
+                    conn.execute(text("ALTER TABLE approval_requests ADD COLUMN stock_snapshot JSONB DEFAULT '{}'::jsonb"))
+
+                if 'expires_at' not in columns:
+                    logger.info("Auto-repair: Adding 'expires_at' to approval_requests...")
+                    conn.execute(text("ALTER TABLE approval_requests ADD COLUMN expires_at TIMESTAMP WITH TIME ZONE"))
+
+                if 'sent_at' not in columns:
+                    logger.info("Auto-repair: Adding 'sent_at' to approval_requests...")
+                    conn.execute(text("ALTER TABLE approval_requests ADD COLUMN sent_at TIMESTAMP WITH TIME ZONE"))
+
+                if 'error_message' not in columns:
+                    logger.info("Auto-repair: Adding 'error_message' to approval_requests...")
+                    conn.execute(text("ALTER TABLE approval_requests ADD COLUMN error_message TEXT"))
                     
                 if 'risk_level' in columns:
                     logger.info("Auto-repair: Dropping 'risk_level' from approval_requests...")
@@ -127,6 +167,20 @@ async def lifespan(app: FastAPI):
                         conn.execute(text("ALTER TABLE approval_requests DROP COLUMN risk_level"))
                     except Exception as drop_err:
                         logger.warning(f"Failed to drop risk_level: {drop_err}")
+
+                # Check columns in approval_audit_logs if table exists
+                if 'approval_audit_logs' in inspector.get_table_names():
+                    audit_columns = [c['name'] for c in inspector.get_columns('approval_audit_logs')]
+                    if 'revalidation_passed' not in audit_columns:
+                        logger.info("Auto-repair: Adding 'revalidation_passed' to approval_audit_logs...")
+                        conn.execute(text("ALTER TABLE approval_audit_logs ADD COLUMN revalidation_passed BOOLEAN DEFAULT TRUE"))
+                    if 'message_content' not in audit_columns:
+                        logger.info("Auto-repair: Adding 'message_content' to approval_audit_logs...")
+                        conn.execute(text("ALTER TABLE approval_audit_logs ADD COLUMN message_content TEXT"))
+                    if 'message_hash' not in audit_columns:
+                        logger.info("Auto-repair: Adding 'message_hash' to approval_audit_logs...")
+                        conn.execute(text("ALTER TABLE approval_audit_logs ADD COLUMN message_hash VARCHAR(64)"))
+                        
             logger.info("Database schema auto-repair check completed successfully!")
         except Exception as repair_err:
             logger.error(f"Failed during database schema auto-repair: {repair_err}", exc_info=True)
@@ -348,7 +402,7 @@ def read_root():
     return {
         "app": "Closely AI API Gateway",
         "status": "healthy",
-        "version": "2.2-debug"
+        "version": "2.3-release"
     }
 
 @app.get("/health")
