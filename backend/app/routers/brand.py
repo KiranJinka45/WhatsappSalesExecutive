@@ -214,7 +214,7 @@ def test_whatsapp_connection(
     target_phone = (payload and payload.test_phone) or org.whatsapp_number or "+919900001111"
     
     test_msg = f"Hello! This is a test message from Closely AI to confirm your WhatsApp Meta Cloud API integration is live and active for {org.name}! 🚀"
-    res = send_whatsapp_message(target_phone, test_msg, org, from_approval=True)
+    res = send_whatsapp_message(target_phone, test_msg, org, from_approval=True, ignore_guardrails=True)
     
     if res.get("status") in ("failed", "kill_switch_active", "shadow_mode_suppressed"):
         err_msg = res.get("error") or f"Dispatch suppressed by mode '{res.get('status')}'"

@@ -22,6 +22,12 @@ def upgrade() -> None:
     # Enable pgvector extension
     op.execute("CREATE EXTENSION IF NOT EXISTS vector;")
 
+    conn = op.get_bind()
+    from sqlalchemy.engine import inspect
+    inspector = inspect(conn)
+    if 'organizations' in inspector.get_table_names():
+        return
+
     # 1. organizations
     op.create_table(
         'organizations',
