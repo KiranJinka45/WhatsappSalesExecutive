@@ -70,6 +70,7 @@ export default function Conversations({ token, brandPhone, userEmail }) {
   useEffect(() => {
     if (selectedConvId) {
       fetchChatDetail(selectedConvId);
+      fetchPendingApprovals();
       setReplayStepIndex(-1);
     }
   }, [selectedConvId]);
@@ -82,6 +83,7 @@ export default function Conversations({ token, brandPhone, userEmail }) {
     // 1. Polling fallback every 6 seconds (handles background sync)
     const pollInterval = setInterval(() => {
       fetchConversations();
+      fetchPendingApprovals();
       const currentSelectedId = selectedConvIdRef.current;
       if (currentSelectedId) {
         fetchChatDetail(currentSelectedId);
