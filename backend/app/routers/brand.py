@@ -200,17 +200,33 @@ def handle_embedded_signup(
 
 class TestConnectionRequest(BaseModel):
     test_phone: Optional[str] = None
+    whatsapp_access_token: Optional[str] = None
+    whatsapp_phone_number_id: Optional[str] = None
+    whatsapp_business_account_id: Optional[str] = None
 
 @router.post("/whatsapp/test-connection")
 def test_whatsapp_connection(
     payload: Optional[TestConnectionRequest] = None,
+    db: Session = Depends(get_db),
     org: models.Organization = Depends(security.get_current_org),
     current_user: models.User = Depends(security.require_role("owner"))
 ):
     """
-    Tests Meta Cloud API / WhatsApp dispatch using current organization credentials.
+    Tests Meta Cloud API / WhatsApp dispatch using provided or saved credentials.
+    Auto-saves valid credentials to the organization profile.
     """
     from ..bsp_service import send_whatsapp_message
+    
+    if payload:
+        if payload.whatsapp_access_token:
+            org.whatsapp_access_token = payload.whatsapp_access_token
+        if payload.whatsapp_phone_number_id:
+            org.whatsapp_phone_number_id = payload.whatsapp_phone_number_id
+        if payload.whatsapp_business_account_id:
+            org.whatsapp_business_account_id = payload.whatsapp_business_account_id
+        db.commit()
+        db.refresh(org)
+
     target_phone = (payload and payload.test_phone) or org.whatsapp_number or "+919900001111"
     
     test_msg = f"Hello! This is a test message from Closely AI to confirm your WhatsApp Meta Cloud API integration is live and active for {org.name}! 🚀"

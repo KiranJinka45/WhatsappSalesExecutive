@@ -106,7 +106,12 @@ export default function Settings({ token }) {
       const res = await apiFetch('/api/brand/whatsapp/test-connection', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ test_phone: whatsappNumber })
+        body: JSON.stringify({
+          test_phone: whatsappNumber,
+          whatsapp_access_token: whatsappAccessToken,
+          whatsapp_phone_number_id: whatsappPhoneNumberId,
+          whatsapp_business_account_id: whatsappWabaId
+        })
       });
       const data = await res.json();
       if (res.ok) {
