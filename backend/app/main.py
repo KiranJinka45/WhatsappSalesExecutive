@@ -285,7 +285,7 @@ def read_root():
     return {
         "app": "Closely AI API Gateway",
         "status": "healthy",
-        "version": "2.0"
+        "version": "2.1-debug"
     }
 
 @app.get("/health")
