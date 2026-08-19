@@ -33,6 +33,15 @@ def readiness():
 
     # Database check
     try:
+        from sqlalchemy import inspect
+        inspector = inspect(engine)
+        tables = inspector.get_table_names()
+        checks["tables"] = tables
+        if 'approval_requests' in tables:
+            checks["approval_requests_columns"] = [c['name'] for c in inspector.get_columns('approval_requests')]
+        else:
+            checks["approval_requests_columns"] = "NOT FOUND"
+
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
     except Exception as e:
