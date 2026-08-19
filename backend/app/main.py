@@ -68,6 +68,69 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.debug(f"Production image URL domain migration skipped: {e}")
 
+    # Self-healing database schema check (auto-repair missing columns/tables on live DB)
+    if os.environ.get("TESTING") != "true":
+        try:
+            from sqlalchemy import inspect
+            with engine.begin() as conn:
+                inspector = inspect(conn)
+                
+                # Check if notifications table exists
+                if 'notifications' not in inspector.get_table_names():
+                    logger.info("Auto-repair: Creating missing 'notifications' table...")
+                    conn.execute(text("""
+                        CREATE TABLE IF NOT EXISTS notifications (
+                            id UUID PRIMARY KEY,
+                            organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                            approval_request_id UUID REFERENCES approval_requests(id) ON DELETE CASCADE,
+                            type VARCHAR(100) NOT NULL,
+                            status VARCHAR(50),
+                            created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+                            read_at TIMESTAMP WITH TIME ZONE
+                        )
+                    """))
+                
+                # Check columns in approval_requests
+                columns = [c['name'] for c in inspector.get_columns('approval_requests')]
+                
+                if 'risk_score' not in columns:
+                    logger.info("Auto-repair: Adding 'risk_score' to approval_requests...")
+                    conn.execute(text("ALTER TABLE approval_requests ADD COLUMN risk_score INTEGER DEFAULT 0"))
+                    
+                if 'llm_model' not in columns:
+                    logger.info("Auto-repair: Adding 'llm_model' to approval_requests...")
+                    conn.execute(text("ALTER TABLE approval_requests ADD COLUMN llm_model VARCHAR(100)"))
+                    
+                if 'prompt_version' not in columns:
+                    logger.info("Auto-repair: Adding 'prompt_version' to approval_requests...")
+                    conn.execute(text("ALTER TABLE approval_requests ADD COLUMN prompt_version VARCHAR(50) DEFAULT 'v1'"))
+                    
+                if 'retrieval_ids' not in columns:
+                    logger.info("Auto-repair: Adding 'retrieval_ids' to approval_requests...")
+                    conn.execute(text("ALTER TABLE approval_requests ADD COLUMN retrieval_ids JSONB DEFAULT '[]'::jsonb"))
+                    
+                if 'grounding_score' not in columns:
+                    logger.info("Auto-repair: Adding 'grounding_score' to approval_requests...")
+                    conn.execute(text("ALTER TABLE approval_requests ADD COLUMN grounding_score NUMERIC(5,2) DEFAULT 0.0"))
+                    
+                if 'decision_engine_version' not in columns:
+                    logger.info("Auto-repair: Adding 'decision_engine_version' to approval_requests...")
+                    conn.execute(text("ALTER TABLE approval_requests ADD COLUMN decision_engine_version VARCHAR(50) DEFAULT 'v1.0'"))
+                    
+                if 'rule_triggered' not in columns:
+                    logger.info("Auto-repair: Adding 'rule_triggered' to approval_requests...")
+                    conn.execute(text("ALTER TABLE approval_requests ADD COLUMN rule_triggered VARCHAR(100)"))
+                    
+                if 'risk_level' in columns:
+                    logger.info("Auto-repair: Dropping 'risk_level' from approval_requests...")
+                    try:
+                        conn.execute(text("ALTER TABLE approval_requests DROP COLUMN risk_level"))
+                    except Exception as drop_err:
+                        logger.warning(f"Failed to drop risk_level: {drop_err}")
+            logger.info("Database schema auto-repair check completed successfully!")
+        except Exception as repair_err:
+            logger.error(f"Failed during database schema auto-repair: {repair_err}", exc_info=True)
+
     # In testing and production, schema is managed cleanly by migrations/test fixtures.
     # Lifespan dynamic DDL is only needed as a convenience fallback in local development.
     if os.environ.get("TESTING") != "true" and getattr(settings, "APP_ENV", "production") == "development":
