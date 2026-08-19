@@ -36,6 +36,26 @@ router = APIRouter(
 )
 
 
+@router.get("/debug-error-clear")
+def debug_error_clear(db: Session = Depends(get_db)):
+    try:
+        import traceback
+        try:
+            reqs = db.query(models.ApprovalRequest).limit(5).all()
+            # If successful, check schema serialization of first request
+            serialized = []
+            if reqs:
+                try:
+                    serialized.append(schemas.ApprovalRequestOut.model_validate(reqs[0]).model_dump(mode="json"))
+                except Exception as val_err:
+                    serialized.append({"serialization_error": str(val_err), "traceback": traceback.format_exc()})
+            return {"status": "success", "count": len(reqs), "sample": serialized}
+        except Exception as q_err:
+            return {"status": "query_failed", "error": str(q_err), "traceback": traceback.format_exc()}
+    except Exception as e:
+        return {"status": "system_failed", "error": str(e)}
+
+
 @router.get("", response_model=List[schemas.ApprovalRequestOut])
 def list_approvals(
     status: Optional[str] = Query(None, description="Filter by approval status, e.g. WAITING_APPROVAL, APPROVED, SENT"),
