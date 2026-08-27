@@ -1047,15 +1047,24 @@ async def receive_whatsapp_message(
     Decoupled processing via BackgroundTasks.
     """
     payload_bytes = await request.body()
+    try:
+        body = await request.json()
+    except Exception:
+        # If not JSON, try Form data (Twilio default format)
+        form_data = await request.form()
+        body = dict(form_data)
+
     logger.info(f"Incoming POST to /api/webhooks/whatsapp. Payload size: {len(payload_bytes)} bytes. X-Hub-Signature-256: {x_hub_signature_256}")
     
-    # Signature Verification
-    if not settings.TESTING:
+    # Signature Verification for Meta Cloud API Webhooks
+    is_meta_payload = isinstance(body, dict) and ("entry" in body or body.get("object") == "whatsapp_business_account")
+    
+    if is_meta_payload and not settings.TESTING:
         if not settings.WHATSAPP_APP_SECRET:
             if settings.APP_ENV == "development":
                 logger.warning("WHATSAPP_APP_SECRET is not set. Skipping signature check in development mode.")
             else:
-                logger.error("WHATSAPP_APP_SECRET is not set. Rejecting webhook.")
+                logger.error("WHATSAPP_APP_SECRET is not set. Rejecting Meta webhook.")
                 raise HTTPException(status_code=401, detail="Authentication credentials not provided")
         else:
             if not x_hub_signature_256 or not verify_meta_signature(payload_bytes, x_hub_signature_256, settings.WHATSAPP_APP_SECRET):
@@ -1067,15 +1076,8 @@ async def receive_whatsapp_message(
                 if settings.APP_ENV == "development":
                     logger.warning(f"Invalid signature in development (computed: sha256={computed_sig}, received: {x_hub_signature_256}), proceeding anyway.")
                 else:
-                    logger.warning(f"Invalid or missing webhook signature rejected. Computed: sha256={computed_sig}, received: {x_hub_signature_256}")
+                    logger.warning(f"Invalid or missing Meta webhook signature rejected. Computed: sha256={computed_sig}, received: {x_hub_signature_256}")
                     raise HTTPException(status_code=403, detail="Invalid or missing signature")
-
-    try:
-        body = await request.json()
-    except Exception:
-        # If not JSON, try Form data (Twilio default format)
-        form_data = await request.form()
-        body = dict(form_data)
 
     logger.info(f"Incoming webhook payload: {body}")
 

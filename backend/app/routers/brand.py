@@ -127,82 +127,58 @@ from typing import Optional
 import logging
 logger = logging.getLogger(__name__)
 
-class EmbeddedSignupRequest(BaseModel):
+class EmbeddedSignupCallbackRequest(BaseModel):
     code: str
-    waba_id: Optional[str] = None
-    phone_number_id: Optional[str] = None
+    session_nonce: str
+    waba_id_hint: Optional[str] = None
+    phone_number_id_hint: Optional[str] = None
 
-@router.post("/whatsapp/embedded-signup")
-def handle_embedded_signup(
-    payload: EmbeddedSignupRequest,
+@router.get("/whatsapp/embedded-signup-config")
+def get_embedded_signup_configuration(
     db: Session = Depends(get_db),
     org: models.Organization = Depends(security.get_current_org),
     current_user: models.User = Depends(security.require_role("owner"))
 ):
     """
-    Exchanges Meta Embedded Signup authorization code for permanent System Access Token,
-    subscribes WABA to webhooks, and updates tenant organization DB record.
+    Returns public Meta App ID, Config ID, API version, and a one-time session nonce.
+    Owner-only endpoint. Zero secrets exposed.
     """
-    import httpx
-    from ..config import settings
+    from ..services import whatsapp_registration_service as reg_service
+    return reg_service.get_embedded_signup_config(db, org, current_user.id)
 
-    code = payload.code
-    waba_id = payload.waba_id
-    phone_number_id = payload.phone_number_id
-    
-    # 1. Exchange OAuth code for Access Token
-    access_token = getattr(settings, "WHATSAPP_ACCESS_TOKEN", None) or "access_token_embedded_signup"
-    if getattr(settings, "WHATSAPP_APP_SECRET", None) and getattr(settings, "WHATSAPP_PHONE_NUMBER_ID", None):
-        try:
-            token_url = f"https://graph.facebook.com/v18.0/oauth/access_token?client_id={settings.WHATSAPP_PHONE_NUMBER_ID}&client_secret={settings.WHATSAPP_APP_SECRET}&code={code}"
-            res = httpx.get(token_url)
-            if res.status_code == 200:
-                data = res.json()
-                access_token = data.get("access_token", access_token)
-        except Exception as e:
-            logger.warning(f"OAuth code exchange fallback: {e}")
-
-    # 2. Fetch Phone Number details from Graph API if waba_id / phone_number_id provided
-    display_phone = org.whatsapp_number or "+919900001111"
-    if waba_id and access_token:
-        try:
-            phone_url = f"https://graph.facebook.com/v18.0/{waba_id}/phone_numbers?access_token={access_token}"
-            res = httpx.get(phone_url)
-            if res.status_code == 200:
-                phones = res.json().get("data", [])
-                if phones:
-                    phone_number_id = phones[0].get("id", phone_number_id)
-                    display_phone = phones[0].get("display_phone_number", display_phone)
-        except Exception as e:
-            logger.warning(f"Failed to fetch phone number details from WABA: {e}")
-
-    # 3. Save to DB record
-    org.whatsapp_business_account_id = waba_id or getattr(org, "whatsapp_business_account_id", None) or "waba_enterprise_demo"
-    org.whatsapp_phone_number_id = phone_number_id or getattr(org, "whatsapp_phone_number_id", None) or "phone_id_enterprise_demo"
-    org.whatsapp_access_token = access_token
-    org.whatsapp_number = display_phone
-    org.is_whatsapp_connected = 1
-    
-    db.commit()
-    db.refresh(org)
-    
-    # Trigger webhook app subscription
-    if org.whatsapp_business_account_id and org.whatsapp_access_token:
-        subscribe_waba_to_app(org.whatsapp_business_account_id, org.whatsapp_access_token)
-    
-    return {
-        "status": "success",
-        "message": "WhatsApp Business Account connected successfully via Meta Embedded Signup!",
-        "whatsapp_number": org.whatsapp_number,
-        "whatsapp_phone_number_id": org.whatsapp_phone_number_id,
-        "whatsapp_business_account_id": org.whatsapp_business_account_id
-    }
+@router.post("/whatsapp/embedded-signup-callback")
+@router.post("/whatsapp/embedded-signup")
+def handle_embedded_signup_callback(
+    payload: EmbeddedSignupCallbackRequest,
+    db: Session = Depends(get_db),
+    org: models.Organization = Depends(security.get_current_org),
+    current_user: models.User = Depends(security.require_role("owner"))
+):
+    """
+    Secure server-side OAuth exchange for Meta Embedded Signup authorization code.
+    Validates single-use session nonce, queries Meta authoritatively for WABA and phone resources,
+    and updates tenant configuration.
+    """
+    from ..services import whatsapp_registration_service as reg_service
+    res = reg_service.exchange_embedded_signup_code(
+        db=db,
+        org=org,
+        user_id=current_user.id,
+        code=payload.code,
+        session_nonce=payload.session_nonce,
+        waba_id_hint=payload.waba_id_hint,
+        phone_number_id_hint=payload.phone_number_id_hint
+    )
+    if res.get("status") == "error":
+        raise HTTPException(status_code=400, detail=res.get("message"))
+    return res
 
 class TestConnectionRequest(BaseModel):
     test_phone: Optional[str] = None
     whatsapp_access_token: Optional[str] = None
     whatsapp_phone_number_id: Optional[str] = None
     whatsapp_business_account_id: Optional[str] = None
+    wasender_api_token: Optional[str] = None
 
 @router.post("/whatsapp/test-connection")
 def test_whatsapp_connection(
@@ -212,7 +188,7 @@ def test_whatsapp_connection(
     current_user: models.User = Depends(security.require_role("owner"))
 ):
     """
-    Tests Meta Cloud API / WhatsApp dispatch using provided or saved credentials.
+    Tests Meta Cloud API / Wasender WhatsApp dispatch using provided or saved credentials.
     Auto-saves valid credentials to the organization profile.
     """
     from ..bsp_service import send_whatsapp_message
@@ -224,10 +200,14 @@ def test_whatsapp_connection(
             org.whatsapp_phone_number_id = payload.whatsapp_phone_number_id
         if payload.whatsapp_business_account_id:
             org.whatsapp_business_account_id = payload.whatsapp_business_account_id
+        if payload.wasender_api_token:
+            policies = dict(org.policies or {})
+            policies["wasender_api_token"] = payload.wasender_api_token
+            org.policies = policies
         db.commit()
         db.refresh(org)
 
-    target_phone = (payload and payload.test_phone) or org.whatsapp_number or "+919900001111"
+    target_phone = (payload and payload.test_phone) or org.whatsapp_number or "+919493348129"
     
     test_msg = f"Hello! This is a test message from Closely AI to confirm your WhatsApp Meta Cloud API integration is live and active for {org.name}! 🚀"
     res = send_whatsapp_message(target_phone, test_msg, org, from_approval=True, ignore_guardrails=True)
@@ -341,6 +321,85 @@ def get_kill_switch_status(
         updated_at=datetime.now(timezone.utc),
         updated_by_user_id=None
     )
+
+
+class RequestVerificationCodeRequest(BaseModel):
+    method: str = "SMS"
+
+class VerifyRegistrationCodeRequest(BaseModel):
+    code: str
+
+@router.get("/whatsapp/connection-status")
+def get_whatsapp_connection_status(
+    db: Session = Depends(get_db),
+    org: models.Organization = Depends(security.get_current_org),
+    current_user: models.User = Depends(security.get_current_user)
+):
+    """
+    Returns sanitized Meta WhatsApp connection status and state for tenant.
+    No access tokens, WABA IDs, phone IDs, or codes are exposed.
+    """
+    from ..services import whatsapp_registration_service as reg_service
+    return reg_service.get_connection_status(db, org)
+
+@router.post("/whatsapp/request-verification-code")
+def request_whatsapp_verification_code(
+    payload: RequestVerificationCodeRequest,
+    db: Session = Depends(get_db),
+    org: models.Organization = Depends(security.get_current_org),
+    current_user: models.User = Depends(security.require_role("owner"))
+):
+    """
+    Requests SMS or Voice verification code from Meta Graph API for discovered phone resource.
+    Owner-only action. Enforces local cooldowns and rate limits.
+    """
+    from ..services import whatsapp_registration_service as reg_service
+    if payload.method not in ["SMS", "VOICE"]:
+        raise HTTPException(status_code=400, detail="Method must be 'SMS' or 'VOICE'")
+    res = reg_service.request_verification_code(db, org, payload.method, current_user.id)
+    if res.get("status") == "error":
+        raise HTTPException(status_code=400, detail=res.get("message"))
+    if res.get("status") == "rate_limited":
+        raise HTTPException(status_code=429, detail=res.get("message"))
+    return res
+
+@router.post("/whatsapp/verify-registration-code")
+def verify_whatsapp_registration_code(
+    payload: VerifyRegistrationCodeRequest,
+    db: Session = Depends(get_db),
+    org: models.Organization = Depends(security.get_current_org),
+    current_user: models.User = Depends(security.require_role("owner"))
+):
+    """
+    Verifies 6-digit verification code against Meta Cloud API.
+    Owner-only action. Verification code is never logged, stored, or echoed.
+    """
+    from ..services import whatsapp_registration_service as reg_service
+    res = reg_service.verify_registration_code(db, org, payload.code, current_user.id)
+    if res.get("status") == "locked":
+        raise HTTPException(status_code=423, detail=res.get("message"))
+    if res.get("status") == "error":
+        raise HTTPException(status_code=400, detail=res.get("message"))
+    return res
+
+@router.post("/whatsapp/activate-live-number")
+def activate_whatsapp_live_number(
+    db: Session = Depends(get_db),
+    org: models.Organization = Depends(security.get_current_org),
+    current_user: models.User = Depends(security.require_role("owner"))
+):
+    """
+    Explicit human owner activation of verified WhatsApp Business number resource.
+    Owner-only action. Registration PIN is generated server-side only.
+    No PIN accepted from browser, API body, query params, or headers.
+    """
+    from ..services import whatsapp_registration_service as reg_service
+    res = reg_service.activate_live_number(db, org, current_user.id)
+    if res.get("status") == "error":
+        raise HTTPException(status_code=400, detail=res.get("message"))
+    return res
+
+
 
 
 

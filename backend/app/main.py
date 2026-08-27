@@ -180,6 +180,33 @@ async def lifespan(app: FastAPI):
                     if 'message_hash' not in audit_columns:
                         logger.info("Auto-repair: Adding 'message_hash' to approval_audit_logs...")
                         conn.execute(text("ALTER TABLE approval_audit_logs ADD COLUMN message_hash VARCHAR(64)"))
+
+                # Check columns in organizations
+                org_columns = [c['name'] for c in inspector.get_columns('organizations')]
+                if 'whatsapp_onboarding_state' not in org_columns:
+                    logger.info("Auto-repair: Adding 'whatsapp_onboarding_state' to organizations...")
+                    conn.execute(text("ALTER TABLE organizations ADD COLUMN whatsapp_onboarding_state VARCHAR(50) DEFAULT 'NOT_CONNECTED'"))
+                if 'whatsapp_onboarding_metadata' not in org_columns:
+                    logger.info("Auto-repair: Adding 'whatsapp_onboarding_metadata' to organizations...")
+                    conn.execute(text("ALTER TABLE organizations ADD COLUMN whatsapp_onboarding_metadata JSONB DEFAULT '{}'::jsonb"))
+
+                # Check if whatsapp_onboarding_audit_logs table exists
+                if 'whatsapp_onboarding_audit_logs' not in inspector.get_table_names():
+                    logger.info("Auto-repair: Creating missing 'whatsapp_onboarding_audit_logs' table...")
+                    conn.execute(text("""
+                        CREATE TABLE IF NOT EXISTS whatsapp_onboarding_audit_logs (
+                            id UUID PRIMARY KEY,
+                            organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                            user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+                            action VARCHAR(50) NOT NULL,
+                            previous_state VARCHAR(50),
+                            new_state VARCHAR(50) NOT NULL,
+                            error_category VARCHAR(100),
+                            metadata JSONB DEFAULT '{}'::jsonb,
+                            correlation_id VARCHAR(64),
+                            created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+                        )
+                    """))
                         
             logger.info("Database schema auto-repair check completed successfully!")
         except Exception as repair_err:

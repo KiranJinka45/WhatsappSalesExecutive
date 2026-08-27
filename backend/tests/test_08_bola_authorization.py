@@ -220,6 +220,70 @@ class TestBOLAAuthorization(unittest.TestCase):
         self.assertEqual(len(results), 0)
         db_a.close()
 
+    def test_08_onboarding_connection_status_tenant_isolation(self):
+        """Verify Tenant A cannot see Tenant B's onboarding status or masked number."""
+        res_a = self.client.get("/api/brand/whatsapp/connection-status", headers=self.headers_a)
+        self.assertEqual(res_a.status_code, 200)
+        data_a = res_a.json()
+        self.assertIn("onboarding_state", data_a)
+        # Ensure Tenant B data is not returned
+        self.assertNotEqual(data_a.get("masked_display_number"), "+9198 ***** 88")
+
+    def test_09_onboarding_mutation_endpoints_role_security(self):
+        """Verify non-owner roles (staff/viewer) cannot execute onboarding mutations (403 Forbidden)."""
+        endpoints = [
+            ("POST", "/api/brand/whatsapp/request-verification-code", {"method": "SMS"}),
+            ("POST", "/api/brand/whatsapp/verify-registration-code", {"code": "123456"}),
+            ("POST", "/api/brand/whatsapp/activate-live-number", {})
+        ]
+        for method, endpoint, payload in endpoints:
+            res = self.client.post(endpoint, json=payload, headers=self.headers_staff_a)
+            self.assertEqual(res.status_code, 403, f"Expected 403 for staff on {endpoint}, got {res.status_code}")
+
+    def test_10_onboarding_audit_logs_rls_isolation(self):
+        """Verify whatsapp_onboarding_audit_logs isolates records per tenant at database RLS level."""
+        db = TestingSessionLocal()
+        db.is_admin = True
+        db.execute(text("SET LOCAL app.current_tenant = ''"))
+
+        audit_b = models.WhatsappOnboardingAuditLog(
+            id=uuid.uuid4(),
+            organization_id=self.org_b_id,
+            action="REQUEST_CODE_SUCCESS",
+            previous_state="NOT_CONNECTED",
+            new_state="VERIFICATION_CODE_REQUESTED",
+            error_category=None,
+            metadata_={"method": "SMS"},
+            correlation_id=str(uuid.uuid4())
+        )
+        db.add(audit_b)
+        db.commit()
+        db.close()
+
+        # Query as Tenant A in clean session under RLS context
+        db_a = TestingSessionLocal()
+        db_a.is_admin = False
+        db_a.organization_id = self.org_a_id
+        tenant_var.set(self.org_a_id)
+        db_a.execute(text("SET LOCAL app.current_tenant = :org_id"), {"org_id": str(self.org_a_id)})
+        results = db_a.query(models.WhatsappOnboardingAuditLog).filter(
+            models.WhatsappOnboardingAuditLog.organization_id == self.org_b_id
+        ).all()
+        self.assertEqual(len(results), 0)
+        db_a.close()
+
+    def test_11_onboarding_api_response_zero_secret_leakage(self):
+        """Verify onboarding API responses never expose tokens, WABA IDs, phone IDs, codes, or PINs."""
+        res = self.client.get("/api/brand/whatsapp/connection-status", headers=self.headers_a)
+        self.assertEqual(res.status_code, 200)
+        raw_text = res.text
+        self.assertNotIn("whatsapp_access_token", raw_text)
+        self.assertNotIn("whatsapp_business_account_id", raw_text)
+        self.assertNotIn("whatsapp_phone_number_id", raw_text)
+        self.assertNotIn("pin", raw_text)
+        self.assertNotIn("code", raw_text)
+
 
 if __name__ == "__main__":
     unittest.main()
+

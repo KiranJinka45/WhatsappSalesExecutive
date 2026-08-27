@@ -18,6 +18,8 @@ class Organization(Base):
     whatsapp_phone_number_id = Column(String(100), nullable=True)
     whatsapp_access_token = Column(Text, nullable=True)
     is_whatsapp_connected = Column(Integer, default=0)
+    whatsapp_onboarding_state = Column(String(50), default="NOT_CONNECTED")
+    whatsapp_onboarding_metadata = Column(JSONB, default=dict)
     policies = Column(JSONB, default=dict)  # shipping, return, exchange, general FAQs
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -294,6 +296,25 @@ class ApprovalAuditLog(Base):
     user = relationship("User")
 
 
+class WhatsappOnboardingAuditLog(Base):
+    __tablename__ = "whatsapp_onboarding_audit_logs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    
+    action = Column(String(50), nullable=False)  # 'REQUEST_CODE', 'VERIFY_CODE', 'ACTIVATE_NUMBER', 'STATE_TRANSITION', 'ERROR'
+    previous_state = Column(String(50), nullable=True)
+    new_state = Column(String(50), nullable=False)
+    error_category = Column(String(100), nullable=True)
+    metadata_ = Column("metadata", JSONB, default=dict)
+    correlation_id = Column(String(64), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    organization = relationship("Organization")
+    user = relationship("User")
+
+
 class OutboundMessage(Base):
     __tablename__ = "outbound_messages"
     __table_args__ = (
@@ -383,6 +404,18 @@ def register_rls_policies():
         f"FOR INSERT WITH CHECK ({fail_closed_using});"
     )
     event.listen(ApprovalAuditLog.__table__, "after_create", audit_ddl)
+
+    onboarding_audit_ddl = DDL(
+        f"ALTER TABLE whatsapp_onboarding_audit_logs ENABLE ROW LEVEL SECURITY; "
+        f"ALTER TABLE whatsapp_onboarding_audit_logs FORCE ROW LEVEL SECURITY; "
+        f"DROP POLICY IF EXISTS onboarding_audit_logs_tenant_select_policy ON whatsapp_onboarding_audit_logs; "
+        f"DROP POLICY IF EXISTS onboarding_audit_logs_tenant_insert_policy ON whatsapp_onboarding_audit_logs; "
+        f"CREATE POLICY onboarding_audit_logs_tenant_select_policy ON whatsapp_onboarding_audit_logs "
+        f"FOR SELECT USING ({fail_closed_using}); "
+        f"CREATE POLICY onboarding_audit_logs_tenant_insert_policy ON whatsapp_onboarding_audit_logs "
+        f"FOR INSERT WITH CHECK ({fail_closed_using});"
+    )
+    event.listen(WhatsappOnboardingAuditLog.__table__, "after_create", onboarding_audit_ddl)
         
     msg_subquery = f"conversation_id IN (SELECT id FROM conversations WHERE {fail_closed_using})"
     msg_ddl = DDL(

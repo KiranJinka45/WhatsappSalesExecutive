@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { apiFetch } from '../api';
+import { launchEmbeddedSignup } from '../utils/metaEmbeddedSignup';
 
 export default function Settings({ token }) {
   const [name, setName] = useState('');
@@ -16,6 +17,7 @@ export default function Settings({ token }) {
   const [whatsappPhoneNumberId, setWhatsappPhoneNumberId] = useState('');
   const [whatsappWabaId, setWhatsappWabaId] = useState('');
   const [whatsappAccessToken, setWhatsappAccessToken] = useState('');
+  const [wasenderApiToken, setWasenderApiToken] = useState('');
   const [testStatus, setTestStatus] = useState('');
   const [testing, setTesting] = useState(false);
 
@@ -25,10 +27,110 @@ export default function Settings({ token }) {
   const [killSwitchActivatedAt, setKillSwitchActivatedAt] = useState(null);
   const [killSwitchLoading, setKillSwitchLoading] = useState(false);
 
+  // WhatsApp Official Number Onboarding State
+  const [onboardingStatus, setOnboardingStatus] = useState(null);
+  const [verificationMethod, setVerificationMethod] = useState('SMS');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [onboardingActionLoading, setOnboardingActionLoading] = useState(false);
+  const [onboardingMessage, setOnboardingMessage] = useState('');
+  const [onboardingError, setOnboardingError] = useState('');
+
   useEffect(() => {
     fetchProfile();
     fetchKillSwitchStatus();
+    fetchConnectionStatus();
   }, []);
+
+  const fetchConnectionStatus = async () => {
+    try {
+      const res = await apiFetch('/api/brand/whatsapp/connection-status');
+      if (res.ok) {
+        const data = await res.json();
+        setOnboardingStatus(data);
+      }
+    } catch (err) {
+      console.error("Error fetching connection status:", err);
+    }
+  };
+
+  const handleRequestVerificationCode = async () => {
+    setOnboardingActionLoading(true);
+    setOnboardingMessage('');
+    setOnboardingError('');
+    try {
+      const res = await apiFetch('/api/brand/whatsapp/request-verification-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ method: verificationMethod })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setOnboardingMessage(data.message || `Verification code requested via ${verificationMethod}`);
+        fetchConnectionStatus();
+      } else {
+        setOnboardingError(data.detail || "Failed to request verification code");
+      }
+    } catch (err) {
+      setOnboardingError(err.message);
+    } finally {
+      setOnboardingActionLoading(false);
+    }
+  };
+
+  const handleVerifyRegistrationCode = async () => {
+    if (!verificationCode || verificationCode.trim().length !== 6) {
+      setOnboardingError("Please enter a valid 6-digit verification code");
+      return;
+    }
+    setOnboardingActionLoading(true);
+    setOnboardingMessage('');
+    setOnboardingError('');
+    try {
+      const res = await apiFetch('/api/brand/whatsapp/verify-registration-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: verificationCode.trim() })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setOnboardingMessage(data.message || "Phone number successfully verified!");
+        setVerificationCode('');
+        fetchConnectionStatus();
+      } else {
+        setOnboardingError(data.detail || "Verification failed");
+      }
+    } catch (err) {
+      setOnboardingError(err.message);
+    } finally {
+      setOnboardingActionLoading(false);
+    }
+  };
+
+  const handleActivateLiveNumber = async () => {
+    const confirm = window.confirm("Are you sure you want to activate your verified official WhatsApp Business number for live automated sales messaging?");
+    if (!confirm) return;
+
+    setOnboardingActionLoading(true);
+    setOnboardingMessage('');
+    setOnboardingError('');
+    try {
+      const res = await apiFetch('/api/brand/whatsapp/activate-live-number', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setOnboardingMessage(data.message || "Official WhatsApp Business Number activated successfully!");
+        fetchConnectionStatus();
+      } else {
+        setOnboardingError(data.detail || "Failed to activate number");
+      }
+    } catch (err) {
+      setOnboardingError(err.message);
+    } finally {
+      setOnboardingActionLoading(false);
+    }
+  };
 
   const fetchProfile = async () => {
     try {
@@ -45,6 +147,7 @@ export default function Settings({ token }) {
         setWhatsappPhoneNumberId(data.whatsapp_phone_number_id || data.policies?.whatsapp_phone_number_id || '');
         setWhatsappWabaId(data.whatsapp_business_account_id || data.policies?.whatsapp_business_account_id || '');
         setWhatsappAccessToken(data.policies?.whatsapp_access_token || '');
+        setWasenderApiToken(data.policies?.wasender_api_token || '');
       }
     } catch (err) {
       console.error("Error fetching brand profile:", err);
@@ -110,7 +213,8 @@ export default function Settings({ token }) {
           test_phone: whatsappNumber,
           whatsapp_access_token: whatsappAccessToken,
           whatsapp_phone_number_id: whatsappPhoneNumberId,
-          whatsapp_business_account_id: whatsappWabaId
+          whatsapp_business_account_id: whatsappWabaId,
+          wasender_api_token: wasenderApiToken
         })
       });
       const data = await res.json();
@@ -146,7 +250,8 @@ export default function Settings({ token }) {
         operating_mode: operatingMode,
         whatsapp_phone_number_id: whatsappPhoneNumberId,
         whatsapp_business_account_id: whatsappWabaId,
-        whatsapp_access_token: whatsappAccessToken
+        whatsapp_access_token: whatsappAccessToken,
+        wasender_api_token: wasenderApiToken
       }
     };
 
@@ -231,18 +336,208 @@ export default function Settings({ token }) {
             </div>
           </div>
 
+          {/* Wasender Instant QR Gateway Section */}
+          <div style={{ background: 'rgba(0, 168, 132, 0.05)', border: '1px solid rgba(0, 168, 132, 0.2)', borderRadius: '8px', padding: '1rem', marginTop: '0.8rem' }}>
+            <div style={{ fontWeight: '600', color: '#25D366', fontSize: '0.9rem', marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              ⚡ Instant QR-Code Gateway (WasenderAPI / WhatsApp Web)
+            </div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.8rem' }}>
+              Connect your phone instantly using WhatsApp Web QR scan without Meta approval or OTP limits.
+            </div>
+            <div style={styles.inputGroup}>
+              <label style={styles.label}>Wasender API Access Token</label>
+              <input 
+                type="password" 
+                className="form-input" 
+                placeholder="ff37ac9d..." 
+                value={wasenderApiToken} 
+                onChange={e => setWasenderApiToken(e.target.value)} 
+              />
+            </div>
+          </div>
+
           {/* Webhook Instructions Box */}
-          <div style={{ background: 'rgba(0, 255, 196, 0.05)', border: '1px solid rgba(0, 255, 196, 0.15)', borderRadius: '8px', padding: '1rem', marginTop: '0.5rem' }}>
+          <div style={{ background: 'rgba(0, 255, 196, 0.05)', border: '1px solid rgba(0, 255, 196, 0.15)', borderRadius: '8px', padding: '1rem', marginTop: '0.8rem' }}>
             <div style={{ fontWeight: '600', color: '#00ffc4', fontSize: '0.85rem', marginBottom: '0.4rem' }}>
-              🔗 Meta Webhook Configuration Details:
+              🔗 Webhook Configuration Details:
             </div>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
-              <div><strong>Callback URL:</strong> <code>https://closely-backend.onrender.com/api/webhooks/whatsapp</code></div>
+              <div><strong>Webhook URL:</strong> <code>https://closely-backend.onrender.com/api/webhooks/whatsapp</code></div>
               <div><strong>Verify Token:</strong> <code>closely_verify_token</code></div>
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          {/* Connect Your Official WhatsApp Business Number Section */}
+          <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '8px', padding: '1.2rem', marginTop: '1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.8rem' }}>
+              <div style={{ fontWeight: '600', fontSize: '1rem', color: '#fff' }}>
+                📱 Connect Your Official WhatsApp Business Number
+              </div>
+              {onboardingStatus && (
+                <span style={{ 
+                  fontSize: '0.75rem', 
+                  padding: '0.2rem 0.6rem', 
+                  borderRadius: '12px', 
+                  backgroundColor: onboardingStatus.onboarding_state === 'CONNECTED' ? 'rgba(0, 255, 196, 0.15)' : 'rgba(255, 204, 0, 0.15)',
+                  color: onboardingStatus.onboarding_state === 'CONNECTED' ? '#00ffc4' : '#ffcc00',
+                  border: `1px solid ${onboardingStatus.onboarding_state === 'CONNECTED' ? '#00ffc4' : '#ffcc00'}`
+                }}>
+                  {onboardingStatus.onboarding_state}
+                </span>
+              )}
+            </div>
+
+            {onboardingStatus?.is_test_number && (
+              <div style={{ background: 'rgba(255, 204, 0, 0.1)', border: '1px solid rgba(255, 204, 0, 0.3)', borderRadius: '6px', padding: '0.6rem', marginBottom: '0.8rem', fontSize: '0.8rem', color: '#ffcc00' }}>
+                ⚠️ <strong>Meta Developer Test Number Connected:</strong> You are currently using a sandbox number. Test dispatches are functional for whitelisted test recipients. To connect your live merchant number, complete official registration below.
+              </div>
+            )}
+
+            {onboardingStatus && (
+              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                <div><strong>Registered Resource:</strong> {onboardingStatus.masked_display_number || 'None'}</div>
+                <div><strong>Guidance:</strong> {onboardingStatus.safe_next_step}</div>
+              </div>
+            )}
+
+            {/* Migration & Coexistence Notice */}
+            {onboardingStatus?.coexistence_flow_available ? (
+              <div style={{ background: 'rgba(0, 255, 196, 0.08)', border: '1px solid rgba(0, 255, 196, 0.25)', borderRadius: '6px', padding: '0.8rem', marginBottom: '1rem', fontSize: '0.8rem', color: '#00ffc4' }}>
+                🌟 <strong>Coexistence Flow Available:</strong> Your existing WhatsApp Business app number is eligible for the official Embedded Signup coexistence flow. Complete Meta's QR/app-confirmation process to use platform capabilities without losing access. <a href="https://developers.facebook.com/docs/whatsapp/embedded-signup/custom-flows/onboarding-business-app-users/" target="_blank" rel="noreferrer" style={{ color: '#fff', textDecoration: 'underline' }}>Read Meta Guide ↗</a>
+              </div>
+            ) : onboardingStatus?.onboarding_state?.startsWith('BLOCKED') || onboardingStatus?.manual_action_required ? (
+              <div style={{ background: 'rgba(255, 204, 0, 0.08)', border: '1px solid rgba(255, 204, 0, 0.25)', borderRadius: '6px', padding: '0.8rem', marginBottom: '1rem', fontSize: '0.8rem', color: '#ffcc00' }}>
+                ℹ️ <strong>Meta Migration Notice:</strong> If this number is active on a mobile app, choose the Meta-supported path shown for your account. Some numbers require official manual migration via Meta Business Manager. Do not disconnect or delete your account unless explicitly instructed by Meta. <a href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started/migrate-existing-whatsapp-number-to-a-business-account/" target="_blank" rel="noreferrer" style={{ color: '#fff', textDecoration: 'underline' }}>Read Meta Official Migration Guide ↗</a>
+              </div>
+            ) : null}
+
+            {/* 1-Click Official Meta Embedded Signup Box */}
+            <div style={{ background: 'linear-gradient(135deg, rgba(24, 119, 242, 0.1), rgba(0, 255, 196, 0.05))', borderRadius: '6px', padding: '0.9rem', border: '1px solid rgba(24, 119, 242, 0.25)', marginBottom: '1rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.8rem' }}>
+                <div>
+                  <div style={{ fontWeight: '600', fontSize: '0.9rem', color: '#1877F2', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <span>📘</span> Official Meta Embedded Signup
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                    Connect your WhatsApp number or complete Coexistence onboarding via Meta's secure popup.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="btn"
+                  style={{
+                    backgroundColor: '#1877F2',
+                    color: '#fff',
+                    fontWeight: '600',
+                    fontSize: '0.85rem',
+                    padding: '0.45rem 1rem',
+                    borderRadius: '6px',
+                    border: 'none',
+                    cursor: 'pointer'
+                  }}
+                  disabled={onboardingActionLoading}
+                  onClick={async () => {
+                    setOnboardingActionLoading(true);
+                    setError('');
+                    try {
+                      const result = await launchEmbeddedSignup({ apiFetch });
+                      if (result && result.status === 'success') {
+                        setSuccess("WhatsApp Business Account connected successfully via Meta Embedded Signup!");
+                        fetchOnboardingStatus();
+                      } else if (result && result.is_test_number) {
+                        setSuccess("Meta Developer Sandbox test number attached successfully.");
+                        fetchOnboardingStatus();
+                      }
+                    } catch (err) {
+                      console.error("Embedded signup error:", err);
+                      setError(err.message || 'Meta Embedded Signup was cancelled or failed.');
+                    } finally {
+                      setOnboardingActionLoading(false);
+                    }
+                  }}
+                >
+                  {onboardingActionLoading ? 'Processing...' : '🚀 Launch Meta Signup'}
+                </button>
+              </div>
+            </div>
+
+            {/* Verification Code Action Box */}
+            <div style={{ background: 'rgba(0, 0, 0, 0.2)', borderRadius: '6px', padding: '0.8rem', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+              <div style={{ fontWeight: '500', fontSize: '0.85rem', color: '#fff', marginBottom: '0.6rem' }}>
+                🔑 Programmatic Verification (Fallback):
+              </div>
+              
+              <div style={{ display: 'flex', gap: '0.8rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '0.8rem' }}>
+                <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                  <input 
+                    type="radio" 
+                    name="verificationMethod" 
+                    value="SMS" 
+                    checked={verificationMethod === 'SMS'} 
+                    onChange={e => setVerificationMethod(e.target.value)} 
+                  /> SMS
+                </label>
+                <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                  <input 
+                    type="radio" 
+                    name="verificationMethod" 
+                    value="VOICE" 
+                    checked={verificationMethod === 'VOICE'} 
+                    onChange={e => setVerificationMethod(e.target.value)} 
+                  /> Voice Call
+                </label>
+
+                <button 
+                  type="button" 
+                  className="btn btn-secondary" 
+                  onClick={handleRequestVerificationCode}
+                  disabled={onboardingActionLoading || !!onboardingStatus?.cooldown_until}
+                  style={{ fontSize: '0.8rem', padding: '0.3rem 0.8rem' }}
+                >
+                  {onboardingActionLoading ? 'Requesting...' : (onboardingStatus?.cooldown_until ? '⏳ Cooldown Active' : '📩 Request Code')}
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                <input 
+                  type="text" 
+                  className="form-input" 
+                  placeholder="Enter 6-digit code" 
+                  maxLength={6} 
+                  autoComplete="off" 
+                  value={verificationCode} 
+                  onChange={e => setVerificationCode(e.target.value)} 
+                  style={{ width: '180px', letterSpacing: '2px', textAlign: 'center', fontSize: '0.9rem' }}
+                />
+                <button 
+                  type="button" 
+                  className="btn btn-primary" 
+                  onClick={handleVerifyRegistrationCode}
+                  disabled={onboardingActionLoading || !verificationCode}
+                  style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}
+                >
+                  {onboardingActionLoading ? 'Verifying...' : '✅ Verify Code'}
+                </button>
+
+                {onboardingStatus?.onboarding_state === 'VERIFICATION_CODE_VERIFIED' && (
+                  <button 
+                    type="button" 
+                    className="btn btn-success" 
+                    onClick={handleActivateLiveNumber}
+                    disabled={onboardingActionLoading}
+                    style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem', backgroundColor: '#00ffc4', color: '#000', fontWeight: '600' }}
+                  >
+                    🚀 Activate Live Number
+                  </button>
+                )}
+              </div>
+
+              {onboardingMessage && <div style={{ color: '#00ffc4', fontSize: '0.8rem', marginTop: '0.5rem' }}>{onboardingMessage}</div>}
+              {onboardingError && <div style={{ color: '#ff8888', fontSize: '0.8rem', marginTop: '0.5rem' }}>{onboardingError}</div>}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '1rem' }}>
             <button 
               type="button" 
               className="btn btn-secondary" 

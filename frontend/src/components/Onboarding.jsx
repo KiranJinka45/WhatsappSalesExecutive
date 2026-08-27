@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { apiFetch } from '../api';
+import { launchEmbeddedSignup } from '../utils/metaEmbeddedSignup';
 
 export default function Onboarding({ initialBrandName, onOnboardingComplete }) {
   const [step, setStep] = useState(1);
@@ -136,19 +137,19 @@ export default function Onboarding({ initialBrandName, onOnboardingComplete }) {
                 }}
                 onClick={async () => {
                   setLoading(true);
+                  setError('');
                   try {
-                    const res = await apiFetch('/api/brand/whatsapp/embedded-signup', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ code: 'demo_meta_oauth_code_123', waba_id: '1098237498234', phone_number_id: '982734982734' })
-                    });
-                    if (res.ok) {
-                      const data = await res.json();
-                      setWhatsappNumber(data.whatsapp_number || '+919900001111');
-                      alert("Successfully connected via Meta 1-Click Embedded Signup!");
+                    const result = await launchEmbeddedSignup({ apiFetch });
+                    if (result && result.status === 'success') {
+                      setWhatsappNumber(result.masked_display_number || '+919900001111');
+                      alert("Successfully connected via Meta Official Embedded Signup!");
+                    } else if (result && result.is_test_number) {
+                      setWhatsappNumber(result.masked_display_number || '+15551234567');
+                      alert("Meta Developer Test Number attached. Complete live registration in Settings when ready.");
                     }
                   } catch (err) {
                     console.error("Meta embedded signup failed:", err);
+                    setError(err.message || 'Meta Embedded Signup was cancelled or failed.');
                   } finally {
                     setLoading(false);
                   }

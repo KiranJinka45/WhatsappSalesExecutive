@@ -72,18 +72,16 @@ def send_whatsapp_message(
 
     # 1b. If WasenderAPI token is configured, use WasenderAPI gateway
     if wasender_token:
-        wasender_url = f"{settings.WASENDER_API_BASE_URL.rstrip('/')}/send-text"
+        wasender_url = f"{settings.WASENDER_API_BASE_URL.rstrip('/')}/send-message"
         headers = {
             "Authorization": f"Bearer {wasender_token}",
             "Content-Type": "application/json"
         }
         payload = {
-            "session": wasender_session,
-            "to": clean_phone,
+            "to": f"+{clean_phone}" if not clean_phone.startswith("+") else clean_phone,
             "text": content
         }
         if media_url:
-            wasender_url = f"{settings.WASENDER_API_BASE_URL.rstrip('/')}/send-message"
             if any(ext in media_url.lower() for ext in [".png", ".jpg", ".jpeg", ".webp"]):
                 payload["imageUrl"] = media_url
             else:

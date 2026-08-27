@@ -43,7 +43,9 @@ class Settings(BaseSettings):
     WHATSAPP_API_BASE_URL: str = "https://graph.facebook.com"
     META_API_VERSION: str = "v20.0"
     
-    # WhatsApp / Meta Webhook Config
+    # WhatsApp / Meta Webhook & Embedded Signup Config
+    META_APP_ID: Optional[str] = None
+    META_CONFIG_ID: Optional[str] = None
     WHATSAPP_PHONE_NUMBER_ID: Optional[str] = None
     WHATSAPP_ACCESS_TOKEN: Optional[str] = None
     WHATSAPP_APP_SECRET: Optional[str] = None
