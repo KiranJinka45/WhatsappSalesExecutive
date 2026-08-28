@@ -1104,38 +1104,59 @@ async def receive_whatsapp_message(
         customer_name = body.get("ProfileName", "Customer")
         message_id = body.get("MessageSid") or body.get("SmsMessageSid")
     # 2. WasenderAPI Format parsing (Instant QR-code WhatsApp Gateway)
-    elif "event" in body or ("data" in body and isinstance(body.get("data"), dict)):
+    elif "event" in body or ("data" in body and isinstance(body.get("data"), (dict, list))):
         try:
             event_name = body.get("event", "")
             data = body.get("data", {})
-            
+            if isinstance(data, list) and len(data) > 0:
+                data = data[0]
+            if isinstance(data, dict) and "messages" in data:
+                msgs = data.get("messages")
+                if isinstance(msgs, list) and len(msgs) > 0:
+                    data = msgs[0]
+                elif isinstance(msgs, dict):
+                    data = msgs
+            if not isinstance(data, dict):
+                data = body
+
             # Ignore outgoing messages (fromMe = True)
             key = data.get("key", {}) if isinstance(data, dict) else {}
-            if key.get("fromMe") is True:
+            if isinstance(key, dict) and key.get("fromMe") is True:
                 return {"status": "ignored", "reason": "Self-sent message ignored"}
-                
-            remote_jid = key.get("remoteJid", "") or (data.get("from", "") if isinstance(data, dict) else "")
+            if data.get("fromMe") is True:
+                return {"status": "ignored", "reason": "Self-sent message ignored"}
+
+            remote_jid = (
+                (key.get("remoteJid") if isinstance(key, dict) else None) or
+                data.get("from") or
+                data.get("jid") or
+                data.get("remoteJid") or
+                ""
+            )
             if "@" in remote_jid:
                 customer_phone = remote_jid.split("@")[0]
             else:
                 customer_phone = remote_jid
-                
-            customer_name = (data.get("pushName") if isinstance(data, dict) else None) or "Customer"
-            message_id = key.get("id") or (data.get("id") if isinstance(data, dict) else None)
-            
+
+            customer_name = data.get("pushName") or data.get("name") or "Customer"
+            message_id = (key.get("id") if isinstance(key, dict) else None) or data.get("id") or data.get("msgId")
+
             # Extract text
             msg_obj = data.get("message", {}) if isinstance(data, dict) else {}
             if isinstance(msg_obj, dict):
                 message_text = (
                     msg_obj.get("conversation") or 
-                    msg_obj.get("extendedTextMessage", {}).get("text") or 
-                    msg_obj.get("imageMessage", {}).get("caption") or 
+                    (msg_obj.get("extendedTextMessage", {}).get("text") if isinstance(msg_obj.get("extendedTextMessage"), dict) else None) or 
+                    (msg_obj.get("imageMessage", {}).get("caption") if isinstance(msg_obj.get("imageMessage"), dict) else None) or 
                     ""
                 ).strip()
             else:
                 message_text = str(data.get("body") or data.get("text") or "").strip()
 
-            brand_phone = (data.get("session") if isinstance(data, dict) else None) or body.get("session")
+            if not message_text and (data.get("body") or data.get("text")):
+                message_text = str(data.get("body") or data.get("text") or "").strip()
+
+            brand_phone = (data.get("session") if isinstance(data, dict) else None) or body.get("session") or body.get("sessionId")
         except Exception as e:
             logger.error(f"Failed to parse WasenderAPI payload: {e}")
             return {"status": "ignored", "reason": "Unparseable WasenderAPI payload structure"}
