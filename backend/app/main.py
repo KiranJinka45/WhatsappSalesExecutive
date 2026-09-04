@@ -68,6 +68,20 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.debug(f"Production image URL domain migration skipped: {e}")
 
+    # Auto-repair legacy invalid WABA IDs (e.g. email addresses in WABA ID field)
+    if os.environ.get("TESTING") != "true":
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("""
+                    UPDATE organizations 
+                    SET whatsapp_business_account_id = NULL 
+                    WHERE whatsapp_business_account_id LIKE '%@%' OR (whatsapp_business_account_id IS NOT NULL AND whatsapp_business_account_id !~ '^[0-9]+$' AND whatsapp_business_account_id NOT LIKE '%demo%');
+                """))
+                conn.commit()
+                logger.info("Auto-repair: Cleaned invalid WABA IDs containing email addresses from organizations table.")
+        except Exception as e:
+            logger.debug(f"WABA ID cleanup skipped: {e}")
+
     # Self-healing database schema check (auto-repair missing columns/tables on live DB)
     if os.environ.get("TESTING") != "true":
         try:

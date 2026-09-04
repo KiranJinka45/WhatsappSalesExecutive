@@ -60,45 +60,11 @@ def send_whatsapp_message(
     token = getattr(org, "whatsapp_access_token", None) or policies.get("whatsapp_access_token") or getattr(settings, "WHATSAPP_ACCESS_TOKEN", None)
     phone_id = getattr(org, "whatsapp_phone_number_id", None) or policies.get("whatsapp_phone_number_id") or getattr(settings, "WHATSAPP_PHONE_NUMBER_ID", None)
     
-    # WasenderAPI Credentials
-    wasender_token = policies.get("wasender_api_token") or getattr(settings, "WASENDER_API_TOKEN", None)
-    wasender_session = policies.get("wasender_session_id") or getattr(settings, "WASENDER_SESSION_ID", None) or "kiran"
-
     # Clean destination phone number format (remove non-digits)
     clean_phone = "".join([c for c in to_phone if c.isdigit()])
 
     # Check if we are targeting the local emulator
     is_emulator = "localhost" in settings.WHATSAPP_API_BASE_URL or "127.0.0.1" in settings.WHATSAPP_API_BASE_URL
-
-    # 1b. If WasenderAPI token is configured, use WasenderAPI gateway
-    if wasender_token:
-        wasender_url = f"{settings.WASENDER_API_BASE_URL.rstrip('/')}/send-message"
-        headers = {
-            "Authorization": f"Bearer {wasender_token}",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "to": f"+{clean_phone}" if not clean_phone.startswith("+") else clean_phone,
-            "text": content
-        }
-        if media_url:
-            if any(ext in media_url.lower() for ext in [".png", ".jpg", ".jpeg", ".webp"]):
-                payload["imageUrl"] = media_url
-            else:
-                payload["videoUrl"] = media_url
-        try:
-            response = httpx.post(wasender_url, json=payload, headers=headers, timeout=10.0)
-            if response.status_code in (200, 201):
-                res_data = response.json()
-                msg_id = res_data.get("id") or res_data.get("message_id") or f"wasender-{clean_phone}"
-                logger.info(f"WasenderAPI message sent successfully to {clean_phone}. ID: {msg_id}")
-                return {"status": "sent", "message_id": msg_id, "mock": False}
-            else:
-                logger.error(f"WasenderAPI dispatch failed with status {response.status_code}: {response.text}")
-                return {"status": "failed", "error": response.text, "mock": False}
-        except Exception as e:
-            logger.error(f"Exception during WasenderAPI request: {e}", exc_info=True)
-            return {"status": "failed", "error": str(e), "mock": False}
 
     # 2. Check if credentials are provided for live dispatch
     if not (token and phone_id) and not is_emulator:
@@ -155,6 +121,28 @@ def send_whatsapp_message(
         else:
             err_text = response.text
             logger.warning(f"WhatsApp Cloud API dispatch error status {response.status_code}: {err_text}")
+            
+            # Format clean, human-readable error messages for known Meta API codes
+            formatted_error = err_text
+            try:
+                err_json = response.json()
+                err_obj = err_json.get("error", {})
+                err_code = err_obj.get("code")
+                err_type = str(err_obj.get("type", ""))
+                err_msg = str(err_obj.get("message", ""))
+                
+                if err_code == 190 or "OAuthException" in err_type or "190" in err_text or "Authentication Error" in err_msg:
+                    formatted_error = "Meta System User Access Token has expired or is invalid (OAuth Error 190). Please generate a Permanent System User Access Token in Meta Business Manager (System Users -> Expiration: Never) and paste it into Settings."
+                elif err_code == 131030 or "131030" in err_text:
+                    formatted_error = f"Recipient phone number {clean_phone} is not added to your Meta Development App allowed test numbers list."
+                elif err_code == 131009 or "131009" in err_text or "phone_number_id" in err_msg.lower():
+                    formatted_error = f"Invalid Meta Phone Number ID '{phone_id}'. Please check your Phone Number ID in Meta Developer Dashboard."
+                elif err_msg:
+                    formatted_error = f"{err_msg} (Meta Code: {err_code})"
+            except Exception:
+                if "190" in err_text or "OAuthException" in err_text:
+                    formatted_error = "Meta System User Access Token has expired or is invalid (OAuth Error 190). Please generate a Permanent System User Access Token in Meta Business Manager (System Users -> Expiration: Never) and paste it into Settings."
+
             # Fallback to hello_world template if outside 24h conversation window
             if ("131047" in err_text or "24 hours" in err_text.lower() or "re-engagement" in err_text.lower()) and not media_url:
                 logger.info(f"Attempting template 'hello_world' fallback for 24h window restriction to {clean_phone}...")
@@ -176,9 +164,17 @@ def send_whatsapp_message(
                     return {"status": "sent", "message_id": msg_id, "mock": False}
                 else:
                     err_text = tpl_resp.text
+                    try:
+                        t_json = tpl_resp.json()
+                        t_err = t_json.get("error", {})
+                        if t_err.get("code") == 190 or t_err.get("type") == "OAuthException":
+                            formatted_error = "Meta System User Access Token has expired or is invalid (OAuth Error 190). Please generate a new System User Access Token in Meta Business Manager and update it in Settings."
+                    except Exception:
+                        pass
             return {
                 "status": "failed",
-                "error": err_text,
+                "error": formatted_error,
+                "raw_error": err_text,
                 "mock": False
             }
     except httpx.TimeoutException as e:

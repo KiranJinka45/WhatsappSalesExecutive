@@ -51,11 +51,6 @@ class Settings(BaseSettings):
     WHATSAPP_APP_SECRET: Optional[str] = None
     WHATSAPP_VERIFY_TOKEN: str = "closely_verify_token"
     
-    # WasenderAPI Integration Config (for instant QR-code scan testing)
-    WASENDER_API_TOKEN: Optional[str] = None
-    WASENDER_API_BASE_URL: str = "https://wasenderapi.com/api"
-    WASENDER_SESSION_ID: Optional[str] = None
-    
     # S3 / Media storage config
     AWS_ACCESS_KEY_ID: Optional[str] = None
     AWS_SECRET_ACCESS_KEY: Optional[str] = None

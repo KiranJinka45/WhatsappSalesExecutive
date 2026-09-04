@@ -29,7 +29,7 @@ services:
     container_name: closely_backend
     restart: always
     ports:
-      - "8000:8000"
+      - "8005:8000"
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/closely_db
       - GEMINI_API_KEY=${GEMINI_API_KEY}

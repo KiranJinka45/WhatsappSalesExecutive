@@ -46,7 +46,17 @@ def update_brand_profile(
 ):
     try:
         update_data = profile_in.model_dump(exclude_unset=True)
-        
+
+        # Check WABA ID format if provided
+        if "whatsapp_business_account_id" in update_data and update_data["whatsapp_business_account_id"]:
+            waba = str(update_data["whatsapp_business_account_id"]).strip()
+            if "@" in waba or (waba and not any(c.isdigit() for c in waba)):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="WhatsApp Business Account ID (WABA ID) must be a numeric ID (e.g. 105938472910485), not an email address."
+                )
+            update_data["whatsapp_business_account_id"] = waba
+
         # Check duplicate WhatsApp number
         if "whatsapp_number" in update_data and update_data["whatsapp_number"]:
             num = str(update_data["whatsapp_number"]).strip()
@@ -178,7 +188,6 @@ class TestConnectionRequest(BaseModel):
     whatsapp_access_token: Optional[str] = None
     whatsapp_phone_number_id: Optional[str] = None
     whatsapp_business_account_id: Optional[str] = None
-    wasender_api_token: Optional[str] = None
 
 @router.post("/whatsapp/test-connection")
 def test_whatsapp_connection(
@@ -188,24 +197,33 @@ def test_whatsapp_connection(
     current_user: models.User = Depends(security.require_role("owner"))
 ):
     """
-    Tests Meta Cloud API / Wasender WhatsApp dispatch using provided or saved credentials.
+    Tests Meta Cloud API WhatsApp dispatch using provided or saved credentials.
     Auto-saves valid credentials to the organization profile.
     """
     from ..bsp_service import send_whatsapp_message
     
     if payload:
+        if payload.whatsapp_business_account_id:
+            waba = payload.whatsapp_business_account_id.strip()
+            if "@" in waba or (waba and not any(c.isdigit() for c in waba)):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="WhatsApp Business Account ID (WABA ID) must be a numeric ID (e.g. 105938472910485), not an email address."
+                )
+            org.whatsapp_business_account_id = waba
         if payload.whatsapp_access_token:
             org.whatsapp_access_token = payload.whatsapp_access_token
         if payload.whatsapp_phone_number_id:
             org.whatsapp_phone_number_id = payload.whatsapp_phone_number_id
-        if payload.whatsapp_business_account_id:
-            org.whatsapp_business_account_id = payload.whatsapp_business_account_id
-        if payload.wasender_api_token:
-            policies = dict(org.policies or {})
-            policies["wasender_api_token"] = payload.wasender_api_token
-            org.policies = policies
         db.commit()
         db.refresh(org)
+
+    stored_waba = str(org.whatsapp_business_account_id or "").strip()
+    if "@" in stored_waba or (stored_waba and not any(c.isdigit() for c in stored_waba) and "demo" not in stored_waba):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Saved WhatsApp Business Account ID (WABA ID) '{stored_waba}' is invalid. WABA ID must be a numeric ID (e.g. 105938472910485), not an email address."
+        )
 
     target_phone = (payload and payload.test_phone) or org.whatsapp_number or "+919493348129"
     
@@ -216,7 +234,7 @@ def test_whatsapp_connection(
         err_msg = res.get("error") or f"Dispatch suppressed by mode '{res.get('status')}'"
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"WhatsApp dispatch test failed: {err_msg}"
+            detail=err_msg
         )
         
     return {

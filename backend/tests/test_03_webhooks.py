@@ -54,24 +54,3 @@ def test_whatsapp_webhook_missing_messages():
     }
     response = client.post("/api/webhooks/whatsapp", json=payload)
     assert response.status_code == 200
-
-def test_wasenderapi_webhook_parsing():
-    payload = {
-        "event": "messages.received",
-        "session": "kiran",
-        "data": {
-            "key": {
-                "remoteJid": "919876543210@s.whatsapp.net",
-                "fromMe": False,
-                "id": "WASENDER_MSG_123"
-            },
-            "message": {
-                "conversation": "Red saree price entha?"
-            },
-            "pushName": "Test Customer"
-        }
-    }
-    response = client.post("/api/webhooks/whatsapp", json=payload)
-    assert response.status_code == 200
-    res_json = response.json()
-    assert "status" in res_json

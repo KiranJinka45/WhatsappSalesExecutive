@@ -17,7 +17,6 @@ export default function Settings({ token }) {
   const [whatsappPhoneNumberId, setWhatsappPhoneNumberId] = useState('');
   const [whatsappWabaId, setWhatsappWabaId] = useState('');
   const [whatsappAccessToken, setWhatsappAccessToken] = useState('');
-  const [wasenderApiToken, setWasenderApiToken] = useState('');
   const [testStatus, setTestStatus] = useState('');
   const [testing, setTesting] = useState(false);
 
@@ -147,7 +146,6 @@ export default function Settings({ token }) {
         setWhatsappPhoneNumberId(data.whatsapp_phone_number_id || data.policies?.whatsapp_phone_number_id || '');
         setWhatsappWabaId(data.whatsapp_business_account_id || data.policies?.whatsapp_business_account_id || '');
         setWhatsappAccessToken(data.policies?.whatsapp_access_token || '');
-        setWasenderApiToken(data.policies?.wasender_api_token || '');
       }
     } catch (err) {
       console.error("Error fetching brand profile:", err);
@@ -213,8 +211,7 @@ export default function Settings({ token }) {
           test_phone: whatsappNumber,
           whatsapp_access_token: whatsappAccessToken,
           whatsapp_phone_number_id: whatsappPhoneNumberId,
-          whatsapp_business_account_id: whatsappWabaId,
-          wasender_api_token: wasenderApiToken
+          whatsapp_business_account_id: whatsappWabaId
         })
       });
       const data = await res.json();
@@ -250,8 +247,7 @@ export default function Settings({ token }) {
         operating_mode: operatingMode,
         whatsapp_phone_number_id: whatsappPhoneNumberId,
         whatsapp_business_account_id: whatsappWabaId,
-        whatsapp_access_token: whatsappAccessToken,
-        wasender_api_token: wasenderApiToken
+        whatsapp_access_token: whatsappAccessToken
       }
     };
 
@@ -322,6 +318,11 @@ export default function Settings({ token }) {
                 value={whatsappWabaId} 
                 onChange={e => setWhatsappWabaId(e.target.value)} 
               />
+              {whatsappWabaId && (whatsappWabaId.includes('@') || (whatsappWabaId.trim() && !/^\d+$/.test(whatsappWabaId.trim()))) && (
+                <div style={{ color: '#ff4d4f', fontSize: '0.75rem', marginTop: '0.3rem', fontWeight: '500' }}>
+                  ⚠️ WABA ID must be a numeric ID (e.g., 109283746501928), not an email address.
+                </div>
+              )}
             </div>
 
             <div style={styles.inputGroup}>
@@ -332,26 +333,6 @@ export default function Settings({ token }) {
                 placeholder="EAAG..." 
                 value={whatsappAccessToken} 
                 onChange={e => setWhatsappAccessToken(e.target.value)} 
-              />
-            </div>
-          </div>
-
-          {/* Wasender Instant QR Gateway Section */}
-          <div style={{ background: 'rgba(0, 168, 132, 0.05)', border: '1px solid rgba(0, 168, 132, 0.2)', borderRadius: '8px', padding: '1rem', marginTop: '0.8rem' }}>
-            <div style={{ fontWeight: '600', color: '#25D366', fontSize: '0.9rem', marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              ⚡ Instant QR-Code Gateway (WasenderAPI / WhatsApp Web)
-            </div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.8rem' }}>
-              Connect your phone instantly using WhatsApp Web QR scan without Meta approval or OTP limits.
-            </div>
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Wasender API Access Token</label>
-              <input 
-                type="password" 
-                className="form-input" 
-                placeholder="ff37ac9d..." 
-                value={wasenderApiToken} 
-                onChange={e => setWasenderApiToken(e.target.value)} 
               />
             </div>
           </div>
@@ -537,17 +518,46 @@ export default function Settings({ token }) {
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '1rem' }}>
-            <button 
-              type="button" 
-              className="btn btn-secondary" 
-              onClick={handleTestConnection}
-              disabled={testing}
-              style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}
-            >
-              {testing ? 'Testing...' : '🧪 Test Meta Connection'}
-            </button>
-            {testStatus && <span style={{ fontSize: '0.8rem' }}>{testStatus}</span>}
+          <div style={{ marginTop: '1.2rem' }}>
+            <div style={{ display: 'flex', gap: '0.8rem', alignItems: 'center' }}>
+              <button 
+                type="button" 
+                className="btn btn-secondary" 
+                onClick={handleTestConnection}
+                disabled={testing}
+                style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }}
+              >
+                {testing ? 'Testing Connection...' : '🧪 Test Meta Connection'}
+              </button>
+            </div>
+            {testStatus && (
+              <div style={{ 
+                marginTop: '0.8rem', 
+                padding: '0.8rem 1rem', 
+                borderRadius: '8px',
+                fontSize: '0.85rem',
+                lineHeight: '1.4',
+                background: testStatus.startsWith('✅') ? 'rgba(0, 255, 196, 0.08)' : 'rgba(255, 77, 79, 0.08)',
+                border: `1px solid ${testStatus.startsWith('✅') ? 'rgba(0, 255, 196, 0.3)' : 'rgba(255, 77, 79, 0.3)'}`,
+                color: testStatus.startsWith('✅') ? '#00ffc4' : '#ff7875'
+              }}>
+                <div style={{ fontWeight: '600', marginBottom: '0.3rem' }}>
+                  {testStatus.startsWith('✅') ? 'Connection Successful' : 'Connection Error'}
+                </div>
+                <div>{testStatus.replace(/^[✅❌]\s*(Test Failed:\s*)?/, '')}</div>
+                {testStatus.includes('OAuth Error 190') && (
+                  <div style={{ marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid rgba(255, 77, 79, 0.2)', color: '#ffccc7', fontSize: '0.8rem' }}>
+                    💡 <strong>How to Fix:</strong> Temporary Meta Graph API tokens expire after 24 hours. To enable permanent, uninterrupted messaging:
+                    <ol style={{ paddingLeft: '1.2rem', marginTop: '0.3rem', marginBottom: 0 }}>
+                      <li>Go to <strong>Meta Business Suite</strong> → <strong>Business Settings</strong> → <strong>System Users</strong>.</li>
+                      <li>Create or select a System User (Admin role) and click <strong>Generate Token</strong> selecting <code>whatsapp_business_messaging</code> and <code>whatsapp_business_management</code>.</li>
+                      <li>Select <strong>Never / Permanent</strong> expiration for the token.</li>
+                      <li>Paste the Permanent Access Token into the field above and click <strong>Save Settings</strong>.</li>
+                    </ol>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div style={styles.sectionTitle}>2. Brand Profile Details</div>
