@@ -34,7 +34,23 @@ def subscribe_waba_to_app(waba_id: str, access_token: str) -> bool:
         return False
 
 @router.get("/profile", response_model=schemas.OrganizationOut)
-def get_brand_profile(org: models.Organization = Depends(security.get_current_org)):
+def get_brand_profile(
+    db: Session = Depends(get_db),
+    org: models.Organization = Depends(security.get_current_org)
+):
+    # Auto-sanitize any legacy email string stored in WABA ID column or policies
+    dirty = False
+    if "@" in str(org.whatsapp_business_account_id or ""):
+        org.whatsapp_business_account_id = None
+        dirty = True
+    if isinstance(org.policies, dict) and "@" in str(org.policies.get("whatsapp_business_account_id") or ""):
+        org.policies["whatsapp_business_account_id"] = None
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(org, "policies")
+        dirty = True
+    if dirty:
+        db.commit()
+        db.refresh(org)
     return org
 
 @router.put("/profile", response_model=schemas.OrganizationOut)
@@ -248,7 +264,13 @@ def test_whatsapp_connection(
             db.refresh(org)
 
     stored_waba = str(org.whatsapp_business_account_id or "").strip()
-    if "@" in stored_waba or (stored_waba and not any(c.isdigit() for c in stored_waba) and "demo" not in stored_waba):
+    if "@" in stored_waba:
+        org.whatsapp_business_account_id = None
+        db.commit()
+        db.refresh(org)
+        stored_waba = ""
+        
+    if stored_waba and not any(c.isdigit() for c in stored_waba) and "demo" not in stored_waba:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Saved WhatsApp Business Account ID (WABA ID) '{stored_waba}' is invalid. WABA ID must be a numeric ID (e.g. 105938472910485), not an email address."
