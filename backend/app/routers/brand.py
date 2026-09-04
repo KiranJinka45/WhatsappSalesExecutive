@@ -79,6 +79,10 @@ def update_brand_profile(
                 merged = dict(existing_policies)
                 if isinstance(value, dict):
                     merged.update(value)
+                # Purge legacy email values from merged policies
+                pol_waba = str(merged.get("whatsapp_business_account_id") or "").strip()
+                if "@" in pol_waba:
+                    merged["whatsapp_business_account_id"] = update_data.get("whatsapp_business_account_id") or org.whatsapp_business_account_id
                 new_ks = merged.get("emergency_kill_switch")
                 org.policies = merged
                 from sqlalchemy.orm.attributes import flag_modified
@@ -211,12 +215,37 @@ def test_whatsapp_connection(
                     detail="WhatsApp Business Account ID (WABA ID) must be a numeric ID (e.g. 105938472910485), not an email address."
                 )
             org.whatsapp_business_account_id = waba
+            if isinstance(org.policies, dict):
+                org.policies["whatsapp_business_account_id"] = waba
         if payload.whatsapp_access_token:
             org.whatsapp_access_token = payload.whatsapp_access_token
+            if isinstance(org.policies, dict):
+                org.policies["whatsapp_access_token"] = payload.whatsapp_access_token
         if payload.whatsapp_phone_number_id:
             org.whatsapp_phone_number_id = payload.whatsapp_phone_number_id
+            if isinstance(org.policies, dict):
+                org.policies["whatsapp_phone_number_id"] = payload.whatsapp_phone_number_id
+        
+        # Clean any legacy email values from policies dict
+        if isinstance(org.policies, dict):
+            pol_waba = str(org.policies.get("whatsapp_business_account_id") or "").strip()
+            if "@" in pol_waba:
+                org.policies["whatsapp_business_account_id"] = org.whatsapp_business_account_id
+
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(org, "policies")
         db.commit()
         db.refresh(org)
+
+    # Sanitize and purge any legacy email values from policies
+    if isinstance(org.policies, dict):
+        pol_waba = str(org.policies.get("whatsapp_business_account_id") or "").strip()
+        if "@" in pol_waba:
+            org.policies["whatsapp_business_account_id"] = None
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(org, "policies")
+            db.commit()
+            db.refresh(org)
 
     stored_waba = str(org.whatsapp_business_account_id or "").strip()
     if "@" in stored_waba or (stored_waba and not any(c.isdigit() for c in stored_waba) and "demo" not in stored_waba):
