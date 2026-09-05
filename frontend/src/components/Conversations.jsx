@@ -50,6 +50,7 @@ export default function Conversations({ token, brandPhone, userEmail }) {
   const [replayStepIndex, setReplayStepIndex] = useState(-1);
   const [pendingApprovals, setPendingApprovals] = useState([]);
   const [editApprovalText, setEditApprovalText] = useState('');
+  const [sseStatus, setSseStatus] = useState('connecting');
   const messagesEndRef = useRef(null);
 
   const selectedConvIdRef = useRef(selectedConvId);
@@ -97,11 +98,16 @@ export default function Conversations({ token, brandPhone, userEmail }) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
       }
+      setSseStatus('connecting');
       const authToken = token || localStorage.getItem('closely_token');
       const url = `${API_BASE_URL || ''}/api/conversations/stream${authToken ? `?token=${encodeURIComponent(authToken)}` : ''}`;
       
       try {
         eventSource = new EventSource(url, { withCredentials: true });
+
+        eventSource.onopen = () => {
+          setSseStatus('connected');
+        };
 
         eventSource.onmessage = (event) => {
           try {
@@ -123,6 +129,7 @@ export default function Conversations({ token, brandPhone, userEmail }) {
         };
 
         eventSource.onerror = (err) => {
+          setSseStatus('disconnected');
           if (eventSource) {
             eventSource.close();
             eventSource = null;
@@ -135,6 +142,7 @@ export default function Conversations({ token, brandPhone, userEmail }) {
           }
         };
       } catch (err) {
+        setSseStatus('disconnected');
         console.error("Error initializing SSE:", err);
       }
     };
@@ -356,7 +364,22 @@ export default function Conversations({ token, brandPhone, userEmail }) {
       {/* 1. Left Sidebar: Conversation List */}
       <div className="glass-panel" style={styles.inboxSidebar}>
         <div style={styles.sidebarHeader}>
-          <h3 style={{ fontSize: '1rem', fontWeight: '600' }}>Inbox</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: '8px' }}>
+            <h3 style={{ fontSize: '1rem', fontWeight: '600', margin: 0 }}>Inbox</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }} title={`Real-time sync: ${sseStatus}`}>
+              <span style={{
+                display: 'inline-block',
+                width: '7px',
+                height: '7px',
+                borderRadius: '50%',
+                backgroundColor: sseStatus === 'connected' ? '#10B981' : sseStatus === 'connecting' ? '#F59E0B' : '#EF4444',
+                boxShadow: sseStatus === 'connected' ? '0 0 6px rgba(16, 185, 129, 0.6)' : 'none'
+              }} />
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                {sseStatus === 'connected' ? 'Live' : sseStatus === 'connecting' ? 'Connecting...' : 'Reconnecting...'}
+              </span>
+            </div>
+          </div>
           <div style={styles.tabButtonGroup}>
             <button 
               style={{
