@@ -31,7 +31,16 @@ class RedisRateLimiter:
 
     def __call__(self, request: Request):
         from .config import settings
-        client_ip = request.client.host if request.client else "unknown"
+        
+        # Resolve real client IP behind reverse proxy (Render, Cloudflare, ALB)
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            client_ip = forwarded.split(",")[0].strip()
+        elif request.headers.get("x-real-ip"):
+            client_ip = request.headers.get("x-real-ip").strip()
+        else:
+            client_ip = request.client.host if request.client else "unknown"
+            
         now = time.time()
 
         if settings.TESTING:
