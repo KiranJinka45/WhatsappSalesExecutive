@@ -33,6 +33,14 @@ export default function App() {
   const [currentUserEmail, setCurrentUserEmail] = useState('');
 
   useEffect(() => {
+    const handleSessionExpired = () => {
+      localStorage.removeItem('closely_token');
+      setIsAuthenticated(false);
+      setToken(null);
+      setPublicView('login');
+    };
+    window.addEventListener('closely_session_expired', handleSessionExpired);
+
     // Check if url path is public catalog route: /catalog/:tenant_slug
     const path = window.location.pathname;
     if (path.startsWith('/catalog/')) {
@@ -43,6 +51,10 @@ export default function App() {
     } else {
       checkAuth();
     }
+
+    return () => {
+      window.removeEventListener('closely_session_expired', handleSessionExpired);
+    };
   }, []);
 
   const checkAuth = async () => {

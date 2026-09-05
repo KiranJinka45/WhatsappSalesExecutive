@@ -22,5 +22,12 @@ export async function apiFetch(path, options = {}) {
     }
   }
   
-  return fetch(url, options);
+  const res = await fetch(url, options);
+  
+  // Broadcast session expiry if API returns 401 Unauthorized (excluding auth endpoints)
+  if (res.status === 401 && !path.includes('/api/auth/')) {
+    window.dispatchEvent(new CustomEvent('closely_session_expired'));
+  }
+  
+  return res;
 }

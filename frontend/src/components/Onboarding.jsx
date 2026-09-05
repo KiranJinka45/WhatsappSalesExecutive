@@ -23,9 +23,17 @@ export default function Onboarding({ initialBrandName, onOnboardingComplete }) {
       setError('WhatsApp Number is required for the bot integration.');
       return;
     }
+    
+    let cleanPhone = whatsappNumber.replace(/[\s\-\(\)]+/g, '');
+    // Auto-prefix +91 for 10-digit Indian mobile numbers (starting 6-9)
+    if (/^[6-9]\d{9}$/.test(cleanPhone)) {
+      cleanPhone = '+91' + cleanPhone;
+      setWhatsappNumber(cleanPhone);
+    }
+
     // Simple phone verification (requires + and digits)
     const phoneRegex = /^\+[1-9]\d{1,14}$/;
-    if (!phoneRegex.test(whatsappNumber.replace(/\s+/g, ''))) {
+    if (!phoneRegex.test(cleanPhone)) {
       setError('Please enter a valid international WhatsApp number including country code (e.g. +919876543210).');
       return;
     }
@@ -182,6 +190,11 @@ export default function Onboarding({ initialBrandName, onOnboardingComplete }) {
                 required
               />
               <span style={styles.hint}>This is the WhatsApp business phone number our AI agent connects to.</span>
+              {whatsappNumber && /^[6-9]\d{9}$/.test(whatsappNumber.trim()) && (
+                <span style={{ color: '#00ffc4', fontSize: '0.75rem', marginTop: '0.25rem', display: 'block', fontWeight: '500' }}>
+                  💡 Auto-formatting to +91{whatsappNumber.trim()}
+                </span>
+              )}
             </div>
 
             <div style={styles.inputGroup}>
