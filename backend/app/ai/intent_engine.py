@@ -23,22 +23,22 @@ def _post_process_intent(intent: str, message: str) -> str:
     msg_lower = message.lower().strip()
     
     # 1. Visual search overrides (Finding R1 / Intent disambiguation)
-    # If the customer explicitly asks for photos, pics, images, or to show/send media, classify as product_visual_search.
-    if any(w in msg_lower for w in ["pic", "pics", "photo", "photos", "image", "images", "visual", "choopinchu", "chupinchu", "choopinchandi", "chupinchandi"]):
+    # If the customer explicitly asks for photos, pics, images, or to show/send media
+    if any(w in msg_lower for w in ["pic", "pics", "photo", "photos", "image", "images", "visual"]):
         return "product_visual_search"
         
     # 2. Hard bargaining/negotiation overrides
     # If the message contains explicit haggling idioms or final price commands, it is human_negotiation.
     # "oka mata", "okamata" (Telugu for 'one word' / firm price)
-    # "final ga", "final price", "best price" (Telugu/English haggling operators)
-    if any(phrase in msg_lower for phrase in ["oka mata", "okamata", "final ga", "final price", "best price"]):
+    # "final ga", "final price", "best price", "thagginchi" (Telugu/English haggling operators)
+    if any(phrase in msg_lower for phrase in ["oka mata", "okamata", "final ga", "final price", "best price", "thagginchi", "tagginchi"]):
         return "human_negotiation"
         
     # 3. Budget ceiling query overrides
     # Standard search requests using ceiling words like "under", "below", "lopu", "lopala", "lo" (when preceded by number)
     # should NOT be misclassified as human_negotiation.
     has_number = any(char.isdigit() for char in msg_lower)
-    if has_number and intent == "human_negotiation":
+    if has_number:
         is_budget_ceiling = False
         if any(w in msg_lower for w in ["under", "below", "less than"]):
             is_budget_ceiling = True
@@ -48,7 +48,7 @@ def _post_process_intent(intent: str, message: str) -> str:
             is_budget_ceiling = True
             
         # Ensure it's not actually an active haggling verb (e.g. "give it to me for X", "reduce it to X")
-        has_negotiation_verb = any(w in msg_lower for w in ["ivvandi", "istharu", "cheyandi", "taggandi", "thagginchandi", "tagginchandi", "thakuva", "thakkuva"])
+        has_negotiation_verb = any(w in msg_lower for w in ["ivvandi", "istharu", "cheyandi", "taggandi", "thagginchandi", "tagginchandi", "thagginchi", "tagginchi", "thakuva", "thakkuva"])
         
         if is_budget_ceiling and not has_negotiation_verb:
             return "product_search"
@@ -72,10 +72,10 @@ def classify_intent(message_content: str, history: List[Dict[str, str]] = None) 
     prompt = f"""You are an NLU classifier for a clothing retail brand's WhatsApp assistant.
 Your job is to classify the user's latest message into exactly ONE of the following 10 structured intents:
 
-1. product_search: Searching for clothes, browsing by categories, colors, budget limits (e.g. "sarees under 2000", "2000 lo sarees", "1500 lopu sarees"), or asking for the standard price/cost of an item (e.g. "price entha", "cost entha").
+1. product_search: Searching for clothes, browsing by categories, colors, budget limits (e.g. "sarees under 2000", "2000 lo sarees", "1500 lopu sarees", "1500 lopu emaina chuppinchandi"), or asking for the standard price/cost of an item (e.g. "price entha", "cost entha").
 2. product_visual_search: Explicitly asking to see pictures, photos, images, or visual media of products, e.g. "send me pictures", "show me photos of silk sarees", "pics pettu", "saree photos".
-3. discount_inquiry: Asking about active coupons, discounts, promo codes, standard sales offers, or asking if any discounts are available (e.g. "Do you have any discount codes?", "Any active promotions?").
-4. human_negotiation: Asking for custom discounts, bargaining, haggling, asking for a price reduction (e.g. "konchem thagginchandi"), or asking for the "final", "best", or "single/firm" price to close a deal (e.g. "Give me 30% discount", "final price?", "best price", "oka mata cheppandi").
+3. discount_inquiry: Asking about active coupons, discounts, promo codes, standard sales offers, or asking if any discounts are available (e.g. "Do you have any discount codes?", "Any active promotions?", "discounts emaina unnaya?").
+4. human_negotiation: Asking for custom discounts, bargaining, haggling, asking for a price reduction (e.g. "konchem thagginchandi", "maku konchem thagginchi ivvandi"), or asking for the "final", "best", or "single/firm" price to close a deal (e.g. "Give me 30% discount", "final price?", "best price", "oka mata cheppandi", "final ga entha ki istharu?").
 5. bulk_order: Asking for wholesale/bulk quantities, large orders, or mentioning 10+ pieces.
 6. complaint: Reporting damaged goods, defects, wrong items, bad experience, or filing a complaint.
 7. refund: Requesting a refund, return, money back, cashback, chargeback, or dispute.
@@ -97,14 +97,23 @@ Respond with ONLY the exact intent name from: product_search, product_visual_sea
 """
     def _rule_fallback(msg: str) -> str:
         msg_lower = msg.lower()
-        if any(w in msg_lower for w in ["pic", "pics", "photo", "photos", "image", "images", "visual", "pettu", "choopinchu", "chupinchu"]): return "product_visual_search"
-        if any(w in msg_lower for w in ["coupon", "promo", "code"]): return "discount_inquiry"
-        if any(w in msg_lower for w in ["discount", "off", "less", "reduce", "cheap", "bargain", "cut", "negotiate", "deal", "thakkuva", "thagginchandi", "tagginchandi", "thakuva", "taggandi"]): return "human_negotiation"
+        # Visual search
+        if any(w in msg_lower for w in ["pic", "pics", "photo", "photos", "image", "images", "visual"]): return "product_visual_search"
+        # Discount inquiry (general promotions inquiry vs custom negotiation)
+        if any(w in msg_lower for w in ["coupon", "promo", "code"]) or (("discount" in msg_lower or "offer" in msg_lower) and any(u in msg_lower for u in ["unnaya", "undha", "available", "any", "emaina", "give code"])): return "discount_inquiry"
+        # Human negotiation (custom bargaining / price reduction requests)
+        if any(w in msg_lower for w in ["discount", "off", "less", "reduce", "cheap", "bargain", "cut", "negotiate", "deal", "thakkuva", "thagginch", "tagginch", "thakuva", "taggandi", "best price", "final price", "oka mata", "okamata"]): return "human_negotiation"
+        # Bulk order
         if any(w in msg_lower for w in ["bulk", "wholesale", "quantity", "pieces", "qty", "piece", "wholesale range"]): return "bulk_order"
+        # Complaint
         if any(w in msg_lower for w in ["damaged", "torn", "defect", "defective", "dirty", "wrong item", "complaint", "worst", "fraud", "chimpiri", "poyindhi", "karab"]): return "complaint"
+        # Refund
         if any(w in msg_lower for w in ["refund", "money back", "cash back", "chargeback", "dispute", "return", "venakki", "wapas"]): return "refund"
+        # Inventory query
         if any(w in msg_lower for w in ["reserve", "hold", "keep aside", "save", "book", "stock", "available", "in stock", "size", "undha", "unnaya", "leva"]): return "inventory_query"
+        # Shipping exception
         if any(w in msg_lower for w in ["tonight", "today", "express", "urgent", "quick delivery", "rush", "same day", "tondaraga"]): return "shipping_exception"
+        # General query
         if any(w in msg_lower for w in ["open", "hours", "timing", "address", "location", "where is", "map", "hello", "hi", "hey", "thanks", "namaste", "namaskaram", "andi"]): return "general_query"
         return "product_search"
 

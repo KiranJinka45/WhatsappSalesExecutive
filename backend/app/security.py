@@ -32,7 +32,10 @@ def get_token(request: Request) -> str:
     
     token = request.cookies.get("access_token")
     if not token:
-        token = request.query_params.get("token")
+        # Only permit query parameter token on SSE / streaming endpoints where custom headers are unsupported by browser EventSource
+        path = getattr(request.url, "path", "")
+        if "/stream" in path or "/events" in path:
+            token = request.query_params.get("token")
 
     if not token:
         raise HTTPException(
