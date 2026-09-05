@@ -38,6 +38,36 @@ class CatalogRow(BaseModel):
             return [s.strip() for s in v.split(",") if s.strip()]
         return v
 
+from urllib.parse import urlparse
+import ipaddress
+
+def is_safe_image_url(url: str) -> bool:
+    """
+    Validates that an image URL uses HTTP/HTTPS and does not target localhost,
+    link-local, cloud metadata, or private IP address spaces (SSRF protection).
+    """
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return False
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+        hostname_lower = hostname.lower()
+        if hostname_lower in ("localhost", "127.0.0.1", "0.0.0.0", "169.254.169.254", "metadata.google.internal"):
+            return False
+        # Try parsing as IP address to catch private ranges
+        try:
+            ip = ipaddress.ip_address(hostname_lower)
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                return False
+        except ValueError:
+            # Domain name, allowed
+            pass
+        return True
+    except Exception:
+        return False
+
 def generate_product_embedding_task(db_session_factory, product_id: str):
     """
     Background task to generate product vector embedding and image embedding asynchronously.
@@ -78,15 +108,15 @@ def generate_product_embedding_task(db_session_factory, product_id: str):
             db.commit()
             
             first_img_url = product.image_urls[0]
-            # Skip known placeholders and fake/invalid domains
-            if any(domain in first_img_url for domain in ["via.placeholder.com", "placehold.co", "images.closely.ai", "example.com"]):
+            # Skip known placeholders, fake/invalid domains, and unsafe SSRF URLs
+            if not is_safe_image_url(first_img_url) or any(domain in first_img_url for domain in ["via.placeholder.com", "placehold.co", "images.closely.ai", "example.com"]):
                 product.image_embedding_status = "failed"
                 db.commit()
             else:
                 try:
                     import httpx
                     logger.info(f"Downloading catalog image for embedding: {first_img_url}")
-                    img_resp = httpx.get(first_img_url, timeout=10.0, verify=False, follow_redirects=True)
+                    img_resp = httpx.get(first_img_url, timeout=10.0, follow_redirects=True)
                     if img_resp.status_code == 200:
                         img_bytes = img_resp.content
                         from .ai_service import get_image_embedding
