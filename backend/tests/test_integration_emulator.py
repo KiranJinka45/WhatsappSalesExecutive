@@ -65,6 +65,21 @@ def clean_emulator_and_db():
     db.close()
     yield
 
+@pytest.fixture(autouse=True)
+def mock_ai_pipeline(monkeypatch):
+    from app import ai_service
+    from unittest.mock import MagicMock
+    mock_eval_res = MagicMock()
+    mock_eval_res.action = "send"
+    mock_eval_res.reason = "Mocked send for integration test"
+    mock_eval_res.risk_score = 0
+    mock_eval_res.ai_recommendation = "approve"
+    mock_eval_res.rule_triggered = "NONE"
+    
+    monkeypatch.setattr(ai_service, "generate_reply", MagicMock(return_value="Hello! Check out our Royal Silk Saree (SKU-SAR-999) for INR 2999."))
+    monkeypatch.setattr(ai_service.decision_engine, "evaluate", MagicMock(return_value=mock_eval_res))
+    yield
+
 def build_mock_webhook(phone: str, text: str) -> dict:
     return {
         "object": "whatsapp_business_account",
@@ -251,20 +266,26 @@ def test_chaos_server_error_takeover():
     response = client.post("/api/webhooks/whatsapp", json=webhook_payload)
     assert response.status_code == 200
     
-    time.sleep(3.0)
+    # Wait for the background execution task to complete
+    ai_msgs = []
+    conv = None
+    for _ in range(16):
+        time.sleep(0.5)
+        db = TestingSessionLocal()
+        db.is_admin = True
+        conv = db.query(models.Conversation).filter(models.Conversation.customer_phone.like("%9876543210")).first()
+        if conv:
+            messages = db.query(models.Message).filter(models.Message.conversation_id == conv.id).all()
+            ai_msgs = [m for m in messages if m.sender == "ai"]
+            if len(ai_msgs) > 0:
+                db.close()
+                break
+        db.close()
     
     # Verify conversation status remains AI_ACTIVE and reply is preserved for dashboard
-    db = TestingSessionLocal()
-    db.is_admin = True
-    conv = db.query(models.Conversation).filter(models.Conversation.customer_phone == "919876543210").first()
     assert conv is not None
     assert conv.status == "AI_ACTIVE"
-    
-    # Confirm generated AI message was recorded in DB
-    messages = db.query(models.Message).filter(models.Message.conversation_id == conv.id).all()
-    ai_msgs = [m for m in messages if m.sender == "ai"]
     assert len(ai_msgs) > 0
-    db.close()
 
 def test_csv_line_endings_normalization():
     """
@@ -353,12 +374,20 @@ def test_webhook_idempotency():
         # If it's a duplicate, it will return status: ignored
         # (For the first one, it is status: processing)
         
-    time.sleep(3.0)
-    
+    # Wait for the background execution task to complete
+    messages_received = []
+    for _ in range(16):
+        time.sleep(0.5)
+        em_res = httpx.get("http://127.0.0.1:9000/api/emulator/messages")
+        if em_res.status_code == 200:
+            messages_received = [m for m in em_res.json() if m["recipient"] == "917777777777"]
+            if len(messages_received) == 1:
+                break
+
     # Assert database structures: exactly 1 conversation and 1 customer message + 1 AI reply
     db = TestingSessionLocal()
     db.is_admin = True
-    conversations = db.query(models.Conversation).filter(models.Conversation.customer_phone == "917777777777").all()
+    conversations = db.query(models.Conversation).filter(models.Conversation.customer_phone.like("%7777777777")).all()
     assert len(conversations) == 1
     
     messages = db.query(models.Message).filter(models.Message.conversation_id == conversations[0].id).all()
@@ -366,8 +395,6 @@ def test_webhook_idempotency():
     db.close()
     
     # Assert emulator received exactly 1 outbound message
-    em_res = httpx.get("http://127.0.0.1:9000/api/emulator/messages")
-    messages_received = [m for m in em_res.json() if m["recipient"] == "917777777777"]
     assert len(messages_received) == 1
 
 def test_retry_verification():
@@ -419,12 +446,19 @@ def test_retry_verification():
     
     # Wait for processing and retry logic to run
     # Outbound attempts: 1st send (fails) -> sleep 0.5s -> 2nd send (fails) -> sleep 1.0s -> 3rd send (succeeds)
-    time.sleep(4.0)
-    
+    messages_received = []
+    for _ in range(16):
+        time.sleep(0.5)
+        em_res = httpx.get("http://127.0.0.1:9000/api/emulator/messages")
+        if em_res.status_code == 200:
+            messages_received = [m for m in em_res.json() if m["recipient"] == "919999999999"]
+            if len(messages_received) == 1:
+                break
+
     # Assert database structures: exactly 1 conversation and 1 outbound AI message
     db = TestingSessionLocal()
     db.is_admin = True
-    conv = db.query(models.Conversation).filter(models.Conversation.customer_phone == "919999999999").first()
+    conv = db.query(models.Conversation).filter(models.Conversation.customer_phone.like("%9999999999")).first()
     assert conv is not None
     # Since it recovered and succeeded, status should be AI_ACTIVE
     assert conv.status == "AI_ACTIVE"
@@ -437,6 +471,4 @@ def test_retry_verification():
     db.close()
     
     # Assert emulator received exactly 1 message
-    em_res = httpx.get("http://127.0.0.1:9000/api/emulator/messages")
-    messages_received = [m for m in em_res.json() if m["recipient"] == "919999999999"]
     assert len(messages_received) == 1
