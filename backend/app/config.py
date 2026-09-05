@@ -20,10 +20,10 @@ class Settings(BaseSettings):
     NVIDIA_API_KEY: Optional[str] = None
     
     # LLM Provider Models
-    GEMINI_MODEL: str = "gemini-3.6-flash"
+    GEMINI_MODEL: str = "gemini-3.8-flash"
     GROQ_MODEL: str = "llama-3.3-70b-versatile"
     OPENAI_MODEL: str = "gpt-4o-mini"
-    OPENROUTER_MODEL: str = "google/gemini-flash-1.5"
+    OPENROUTER_MODEL: str = "google/gemini-3.8-flash"
     NVIDIA_MODEL: str = "meta/llama-3.3-70b-instruct"
 
     # Supabase Configuration
