@@ -9,7 +9,8 @@ from ..approval_service import (
     get_tenant_approval_requests,
     get_approval_request_by_id,
     get_approval_audit_logs,
-    transition_approval_state
+    transition_approval_state,
+    approve_draft_atomic
 )
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,16 @@ _error_schema = {
 router = APIRouter(
     prefix="/api/approvals",
     tags=["approvals"],
+    responses={
+        400: {"description": "Bad Request", **_error_schema},
+        401: {"description": "Unauthorized", **_error_schema},
+        403: {"description": "Forbidden", **_error_schema},
+    },
+)
+
+inbox_router = APIRouter(
+    prefix="/api/inbox",
+    tags=["inbox"],
     responses={
         400: {"description": "Bad Request", **_error_schema},
         401: {"description": "Unauthorized", **_error_schema},
@@ -123,6 +134,60 @@ def get_approval_detail(
     return approval
 
 
+@router.post("/{approval_id}/approve", response_model=schemas.ApprovalRequestOut)
+def approve_draft_endpoint(
+    approval_id: UUID,
+    payload: Optional[schemas.ApprovalDirectApproveRequest] = None,
+    db: Session = Depends(get_db),
+    org: models.Organization = Depends(security.get_current_org),
+    current_user: models.User = Depends(security.require_role("owner", "manager"))
+):
+    """
+    Atomic Approval Endpoint (POST /api/approvals/{id}/approve):
+    Acquires pessimistic lock, revalidates prices/stock snapshots against live DB,
+    computes SHA-256 message hash, advances status to APPROVED, creates OutboundMessage (PENDING),
+    and appends immutable ApprovalAuditLog.
+    """
+    edited_response = payload.edited_response if payload else None
+    reason = payload.reason if payload else None
+    approval, outbound = approve_draft_atomic(
+        db=db,
+        tenant_id=org.id,
+        approval_id=approval_id,
+        merchant_edited_text=edited_response,
+        user_id=current_user.id,
+        reason=reason
+    )
+    return approval
+
+
+@inbox_router.post("/{approval_id}/approve", response_model=schemas.ApprovalRequestOut)
+def inbox_approve_draft_endpoint(
+    approval_id: UUID,
+    payload: Optional[schemas.ApprovalDirectApproveRequest] = None,
+    db: Session = Depends(get_db),
+    org: models.Organization = Depends(security.get_current_org),
+    current_user: models.User = Depends(security.require_role("owner", "manager"))
+):
+    """
+    Atomic Approval Endpoint Alias (POST /api/inbox/{id}/approve):
+    Acquires pessimistic lock, revalidates prices/stock snapshots against live DB,
+    computes SHA-256 message hash, advances status to APPROVED, creates OutboundMessage (PENDING),
+    and appends immutable ApprovalAuditLog.
+    """
+    edited_response = payload.edited_response if payload else None
+    reason = payload.reason if payload else None
+    approval, outbound = approve_draft_atomic(
+        db=db,
+        tenant_id=org.id,
+        approval_id=approval_id,
+        merchant_edited_text=edited_response,
+        user_id=current_user.id,
+        reason=reason
+    )
+    return approval
+
+
 @router.post("/{approval_id}/respond", response_model=schemas.ApprovalRequestOut)
 def respond_to_approval(
     approval_id: UUID,
@@ -167,3 +232,4 @@ def get_approval_audit_trail(
         raise HTTPException(status_code=404, detail="Approval request not found")
         
     return get_approval_audit_logs(db=db, org_id=org.id, approval_id=approval_id)
+

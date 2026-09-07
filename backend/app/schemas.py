@@ -300,6 +300,12 @@ class ApprovalActionRequest(BaseModel):
     reason: Optional[str] = None
 
 
+class ApprovalDirectApproveRequest(BaseModel):
+    edited_response: Optional[str] = None
+    reason: Optional[str] = None
+
+
+
 class ApprovalAuditLogOut(BaseModel):
     id: UUID
     organization_id: UUID

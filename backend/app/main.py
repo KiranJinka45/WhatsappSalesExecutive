@@ -416,6 +416,7 @@ app.include_router(brand.router)
 app.include_router(conversations.router)
 app.include_router(webhooks.router)
 app.include_router(approvals.router)
+app.include_router(approvals.inbox_router)
 app.include_router(health.router)
 app.include_router(analytics.router)
 

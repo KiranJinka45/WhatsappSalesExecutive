@@ -561,3 +561,196 @@ def transition_approval_state(
     db.refresh(approval)
     return approval, send_result
 
+
+def approve_draft_atomic(
+    db: Session,
+    tenant_id: UUID,
+    approval_id: UUID,
+    merchant_edited_text: Optional[str] = None,
+    user_id: Optional[UUID] = None,
+    reason: Optional[str] = None
+) -> Tuple[models.ApprovalRequest, models.OutboundMessage]:
+    """
+    Executes the single unbreakable atomic transaction to approve a draft:
+    1. Acquires row-level pessimistic lock (with_for_update()) on ApprovalRequest.
+    2. Enforces Tenant Isolation and checks existence.
+    3. Re-checks Emergency Kill Switch (both tenant policy & Redis).
+    4. Revalidates live catalog facts (prices and stock) against database facts.
+       If drifted, aborts with 409 Conflict and records an audit log.
+    5. Computes SHA-256 hash of final message text (original proposed or merchant edited).
+    6. Increments version and advances ApprovalRequest status to APPROVED.
+    7. Atomically creates / enqueues OutboundMessage in PENDING status with idempotency key.
+    8. Appends immutable ApprovalAuditLog entry.
+    9. Commits the transaction and returns (approval, outbound_message).
+    """
+    # 1. Fetch approval request with row lock to prevent race conditions
+    approval = db.query(models.ApprovalRequest).with_for_update().filter(
+        models.ApprovalRequest.id == approval_id,
+        models.ApprovalRequest.organization_id == tenant_id
+    ).first()
+
+    if not approval:
+        raise HTTPException(status_code=404, detail="Approval request not found")
+
+    org = db.query(models.Organization).filter(models.Organization.id == tenant_id).first()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    conv = db.query(models.Conversation).filter(
+        models.Conversation.id == approval.conversation_id,
+        models.Conversation.organization_id == tenant_id
+    ).first()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Associated conversation not found")
+
+    # 2. Check Emergency Kill Switch
+    policies = org.policies or {}
+    if policies.get("emergency_kill_switch") is True:
+        audit = models.ApprovalAuditLog(
+            organization_id=tenant_id,
+            approval_request_id=approval.id,
+            conversation_id=conv.id,
+            user_id=user_id,
+            action="BLOCKED_BY_KILL_SWITCH",
+            previous_status=approval.status,
+            new_status=approval.status,
+            message_content=approval.proposed_response,
+            metadata_={"attempted_action": "approve", "reason": "Emergency kill switch active"}
+        )
+        db.add(audit)
+        db.commit()
+        raise HTTPException(
+            status_code=400,
+            detail="Emergency kill switch is currently active for this organization. Outbound dispatches are halted."
+        )
+
+    # 3. Check Expiration
+    now_utc = datetime.now(timezone.utc)
+    if approval.expires_at and approval.expires_at < now_utc:
+        if approval.status not in ["EXPIRED", "SENT", "REJECTED"]:
+            old_st = approval.status
+            approval.status = "EXPIRED"
+            audit = models.ApprovalAuditLog(
+                organization_id=tenant_id,
+                approval_request_id=approval.id,
+                conversation_id=conv.id,
+                user_id=user_id,
+                action="EXPIRED",
+                previous_status=old_st,
+                new_status="EXPIRED",
+                metadata_={"reason": "Request expired before approval"}
+            )
+            db.add(audit)
+            db.commit()
+        raise HTTPException(status_code=400, detail="Approval request has expired")
+
+    # 4. Check terminal states
+    if approval.status in ["REJECTED", "CANCELLED", "EXPIRED"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot approve draft with terminal status '{approval.status}'"
+        )
+
+    old_status = approval.status
+
+    # 5. Revalidate live catalog facts
+    reval_ok, reval_err = revalidate_catalog_facts(
+        db=db,
+        org_id=tenant_id,
+        retrieval_ids=approval.retrieval_ids or [],
+        price_snapshot=approval.price_snapshot or {},
+        stock_snapshot=approval.stock_snapshot or {}
+    )
+    if not reval_ok:
+        audit = models.ApprovalAuditLog(
+            organization_id=tenant_id,
+            approval_request_id=approval.id,
+            conversation_id=conv.id,
+            user_id=user_id,
+            action="REVALIDATION_FAILED",
+            previous_status=old_status,
+            new_status=approval.status,
+            revalidation_passed=False,
+            message_content=approval.proposed_response,
+            metadata_={"revalidation_error": reval_err}
+        )
+        db.add(audit)
+        db.commit()
+        raise HTTPException(
+            status_code=409,
+            detail=f"Catalog facts changed: {reval_err}"
+        )
+
+    # 6. Final Message Content & Hashing
+    if merchant_edited_text and merchant_edited_text.strip():
+        final_text = merchant_edited_text.strip()
+        approval.edited_by_user_id = user_id
+        approval.edited_response = final_text
+        action_name = "DRAFT_EDITED"
+    else:
+        if not approval.proposed_response or not approval.proposed_response.strip():
+            raise HTTPException(status_code=400, detail="Proposed response text cannot be empty")
+        final_text = approval.proposed_response.strip()
+        approval.approved_by_user_id = user_id
+        action_name = "APPROVED"
+
+    msg_hash = hash_message(final_text)
+    current_ver = (approval.version or 1) + 1
+    approval.version = current_ver
+    approval.message_hash = msg_hash
+    approval.status = "APPROVED"
+
+    # 7. Create or fetch OutboundMessage in PENDING status with idempotency key
+    outbox_key = f"outbox_{approval.id}_v{current_ver}"
+    outbound = db.query(models.OutboundMessage).filter(
+        models.OutboundMessage.provider_idempotency_key == outbox_key
+    ).first()
+
+    if not outbound:
+        outbound = models.OutboundMessage(
+            approval_request_id=approval.id,
+            organization_id=tenant_id,
+            conversation_id=conv.id,
+            message_version=current_ver,
+            provider_idempotency_key=outbox_key,
+            payload_hash=msg_hash,
+            recipient_phone=conv.customer_phone,
+            content=final_text,
+            status="PENDING",
+            attempt_count=0
+        )
+        db.add(outbound)
+        db.flush()
+
+    # 8. Append immutable ApprovalAuditLog
+    audit_log = models.ApprovalAuditLog(
+        organization_id=tenant_id,
+        approval_request_id=approval.id,
+        conversation_id=conv.id,
+        user_id=user_id,
+        action=action_name,
+        previous_status=old_status,
+        new_status="APPROVED",
+        message_content=final_text,
+        message_hash=msg_hash,
+        revalidation_passed=True,
+        metadata_={"reason": reason, "outbox_id": str(outbound.id), "version": current_ver}
+    )
+    db.add(audit_log)
+    db.commit()
+    db.refresh(approval)
+    db.refresh(outbound)
+
+    # Broadcast websocket update
+    try:
+        manager.broadcast(str(tenant_id), "approval_updated", {
+            "approval_id": str(approval.id),
+            "status": approval.status,
+            "outbox_id": str(outbound.id)
+        })
+    except Exception as ws_err:
+        logger.debug(f"Websocket notification skipped: {ws_err}")
+
+    return approval, outbound
+
+
