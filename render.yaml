@@ -33,7 +33,7 @@ services:
       - key: WHATSAPP_VERIFY_TOKEN
         sync: false
       - key: GEMINI_MODEL
-        value: gemini-3.8-flash
+        value: gemini-3.7-flash
       - key: GROQ_MODEL
         value: openai/gpt-oss-20b
       - key: GEMINI_API_KEY
