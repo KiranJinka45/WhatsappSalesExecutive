@@ -385,3 +385,242 @@ def get_public_products(
             "image_url": p.image_urls[0] if p.image_urls and len(p.image_urls) > 0 else "https://via.placeholder.com/300"
         })
     return res_list
+
+
+STARTER_PACKS = {
+    "silk_sarees": [
+        {
+            "sku": "SAREE-KAN-001",
+            "name": "Kanchipuram Pure Silk Saree (Crimson Red & Gold Zari)",
+            "category_name": "Silk Sarees",
+            "gender": "women",
+            "price": 6499.00,
+            "color": "Red",
+            "fabric": "Pure Silk",
+            "description": "Authentic handwoven Kanchipuram pure silk saree with heavy gold zari border and rich pallu. Comes with unstitched blouse piece.",
+            "sizes": ["Free Size"],
+            "stock_count": 12,
+            "image_urls": ["https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=600&auto=format&fit=crop&q=80"]
+        },
+        {
+            "sku": "SAREE-BAN-002",
+            "name": "Banarasi Handwoven Katan Silk Saree (Royal Blue)",
+            "category_name": "Silk Sarees",
+            "gender": "women",
+            "price": 4899.00,
+            "color": "Blue",
+            "fabric": "Katan Silk",
+            "description": "Traditional Banarasi woven silk saree featuring intricate floral kadwa motifs and lustrous finish.",
+            "sizes": ["Free Size"],
+            "stock_count": 15,
+            "image_urls": ["https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?w=600&auto=format&fit=crop&q=80"]
+        },
+        {
+            "sku": "SAREE-SOF-003",
+            "name": "Soft Silk Pastel Festive Saree (Mint Green & Rose Gold)",
+            "category_name": "Silk Sarees",
+            "gender": "women",
+            "price": 2999.00,
+            "color": "Green",
+            "fabric": "Soft Silk",
+            "description": "Lightweight and breathable soft silk saree in pleasant pastel mint green with subtle rose gold zari work.",
+            "sizes": ["Free Size"],
+            "stock_count": 20,
+            "image_urls": ["https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?w=600&auto=format&fit=crop&q=80"]
+        },
+        {
+            "sku": "SAREE-DHR-004",
+            "name": "Dharmavaram Traditional Bridal Silk Saree (Deep Maroon)",
+            "category_name": "Silk Sarees",
+            "gender": "women",
+            "price": 7999.00,
+            "color": "Maroon",
+            "fabric": "Pure Silk",
+            "description": "Exquisite bridal silk saree with broad temple border and contrasting golden zari weaving.",
+            "sizes": ["Free Size"],
+            "stock_count": 8,
+            "image_urls": ["https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=600&auto=format&fit=crop&q=80"]
+        },
+        {
+            "sku": "SAREE-MYS-005",
+            "name": "Mysore Crepe Silk Lightweight Saree (Mustard Yellow)",
+            "category_name": "Silk Sarees",
+            "gender": "women",
+            "price": 3299.00,
+            "color": "Yellow",
+            "fabric": "Crepe Silk",
+            "description": "Elegant crepe silk saree known for smooth drape, subtle sheen, and effortless maintenance.",
+            "sizes": ["Free Size"],
+            "stock_count": 18,
+            "image_urls": ["https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?w=600&auto=format&fit=crop&q=80"]
+        }
+    ],
+    "ethnic_wear": [
+        {
+            "sku": "KURTI-ANK-001",
+            "name": "Anarkali Floor-Length Kurti Set with Dupatta (Teal Blue)",
+            "category_name": "Kurtis & Sets",
+            "gender": "women",
+            "price": 2499.00,
+            "color": "Teal",
+            "fabric": "Georgette",
+            "description": "Flared Anarkali kurti set paired with matching pants and floral printed organza dupatta.",
+            "sizes": ["S", "M", "L", "XL", "XXL"],
+            "stock_count": 25,
+            "image_urls": ["https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?w=600&auto=format&fit=crop&q=80"]
+        },
+        {
+            "sku": "KURTI-CHK-002",
+            "name": "Lucknowi Chikankari Hand-Embroidered Cotton Kurti (White)",
+            "category_name": "Kurtis & Sets",
+            "gender": "women",
+            "price": 1599.00,
+            "color": "White",
+            "fabric": "Cotton",
+            "description": "Authentic hand-embroidered Lucknowi chikankari straight kurti with delicate shadow and murri stitch work.",
+            "sizes": ["M", "L", "XL"],
+            "stock_count": 30,
+            "image_urls": ["https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?w=600&auto=format&fit=crop&q=80"]
+        },
+        {
+            "sku": "KURTI-VLV-003",
+            "name": "Festive Velvet Straight Kurti with Zari Border (Emerald Green)",
+            "category_name": "Kurtis & Sets",
+            "gender": "women",
+            "price": 3499.00,
+            "color": "Green",
+            "fabric": "Velvet",
+            "description": "Plush micro-velvet festive kurti with intricate gold zari sleeve detailing and sweetheart neckline.",
+            "sizes": ["S", "M", "L", "XL"],
+            "stock_count": 10,
+            "image_urls": ["https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=600&auto=format&fit=crop&q=80"]
+        }
+    ],
+    "jewelry": [
+        {
+            "sku": "JEWEL-TMP-001",
+            "name": "Antique Gold Temple Jewellery Matte Finish Necklace Set",
+            "category_name": "Fashion Jewelry",
+            "gender": "women",
+            "price": 1899.00,
+            "color": "Gold",
+            "fabric": "Brass / Alloy",
+            "description": "South Indian style matte finish temple necklace set with Lakshmi design and matching jhumkas.",
+            "sizes": ["Standard"],
+            "stock_count": 20,
+            "image_urls": ["https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?w=600&auto=format&fit=crop&q=80"]
+        },
+        {
+            "sku": "JEWEL-KND-002",
+            "name": "Kundan & Pearl Traditional Choker Set with Earrings",
+            "category_name": "Fashion Jewelry",
+            "gender": "women",
+            "price": 2499.00,
+            "color": "Cream / Gold",
+            "fabric": "Kundan / Pearls",
+            "description": "Handcrafted bridal Kundan choker necklace with cluster pearl hangings and adjustable dori.",
+            "sizes": ["Standard"],
+            "stock_count": 15,
+            "image_urls": ["https://images.unsplash.com/photo-1535632066927-ab7c9ab60908?w=600&auto=format&fit=crop&q=80"]
+        }
+    ]
+}
+
+@router.post("/seed-starter-pack", status_code=status.HTTP_201_CREATED)
+def seed_starter_pack(
+    background_tasks: BackgroundTasks,
+    pack_type: str = Query("silk_sarees", description="Starter pack type: 'silk_sarees', 'ethnic_wear', or 'jewelry'"),
+    db: Session = Depends(get_db),
+    org: models.Organization = Depends(security.get_current_org),
+    current_user: models.User = Depends(security.require_role("owner"))
+):
+    """
+    Seeds a pre-configured starter product pack into the merchant's catalog,
+    instantly equipping the AI with real inventory for onboarding tests.
+    """
+    if pack_type not in STARTER_PACKS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid pack_type '{pack_type}'. Available options: {list(STARTER_PACKS.keys())}"
+        )
+
+    pack_items = STARTER_PACKS[pack_type]
+    seeded_products = []
+
+    for item in pack_items:
+        # Category resolution
+        cat_id = None
+        if item.get("category_name"):
+            category = db.query(models.Category).filter(
+                models.Category.organization_id == org.id,
+                models.Category.name.ilike(item["category_name"])
+            ).first()
+            if not category:
+                category = models.Category(organization_id=org.id, name=item["category_name"])
+                db.add(category)
+                db.commit()
+                db.refresh(category)
+            cat_id = category.id
+
+        # Unique SKU generation per organization
+        sku = f"{org.id.hex[:4].upper()}-{item['sku']}"
+        existing = db.query(models.Product).filter(
+            models.Product.organization_id == org.id,
+            models.Product.sku == sku
+        ).first()
+
+        if existing:
+            # Update existing
+            existing.name = item["name"]
+            existing.price = Decimal(str(item["price"]))
+            existing.color = item["color"]
+            existing.fabric = item["fabric"]
+            existing.description = item["description"]
+            existing.sizes = item["sizes"]
+            existing.stock_count = item["stock_count"]
+            existing.image_urls = item["image_urls"]
+            existing.category_id = cat_id
+            existing.embedding_status = "pending"
+            db.commit()
+            db.refresh(existing)
+            seeded_products.append(existing)
+            background_tasks.add_task(generate_product_embedding_task, SessionLocal, str(existing.id))
+        else:
+            # Create new
+            prod = models.Product(
+                organization_id=org.id,
+                category_id=cat_id,
+                sku=sku,
+                name=item["name"],
+                gender=item.get("gender", "women"),
+                price=Decimal(str(item["price"])),
+                color=item["color"],
+                fabric=item["fabric"],
+                description=item["description"],
+                sizes=item["sizes"],
+                stock_count=item["stock_count"],
+                image_urls=item["image_urls"],
+                embedding_status="pending"
+            )
+            db.add(prod)
+            db.commit()
+            db.refresh(prod)
+            seeded_products.append(prod)
+            background_tasks.add_task(generate_product_embedding_task, SessionLocal, str(prod.id))
+
+    return {
+        "status": "success",
+        "pack_type": pack_type,
+        "seeded_count": len(seeded_products),
+        "products": [
+            {
+                "id": str(p.id),
+                "sku": p.sku,
+                "name": p.name,
+                "price": float(p.price),
+                "stock_count": p.stock_count,
+                "category": item.get("category_name")
+            }
+            for p, item in zip(seeded_products, pack_items)
+        ]
+    }
