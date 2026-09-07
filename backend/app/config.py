@@ -20,8 +20,8 @@ class Settings(BaseSettings):
     NVIDIA_API_KEY: Optional[str] = None
     
     # LLM Provider Models (Driven by environment variables with standard stable defaults)
-    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
-    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
     OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     OPENROUTER_MODEL: str = os.getenv("OPENROUTER_MODEL", "google/gemini-flash-1.5")
     NVIDIA_MODEL: str = os.getenv("NVIDIA_MODEL", "meta/llama-3.3-70b-instruct")
