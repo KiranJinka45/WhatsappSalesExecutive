@@ -26,7 +26,7 @@ def verify_meta_signature(payload: bytes, signature_header: str, app_secret: str
     ).hexdigest()
     return hmac.compare_digest(expected_sig, computed_sig)
 
-@router.get("/whatsapp", response_class=Response)
+@router.get("/whatsapp", response_class=Response, responses={403: {"description": "Verification token mismatch"}})
 def verify_whatsapp_handshake(
     hub_mode: str = Query(None, alias="hub.mode"),
     hub_challenge: str = Query(None, alias="hub.challenge"),
