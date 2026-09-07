@@ -592,7 +592,7 @@ def test_16_zero_outbound_delivery_guardrail():
 def test_16_network_boundary_zero_outbound_guardrail(mock_req_send, mock_httpx_send):
     """
     NETWORK BOUNDARY GUARDRAIL TEST:
-    Intercepts any HTTP network call attempted to Meta/Wasender/WhatsApp API at the socket/client layer.
+    Intercepts any HTTP network call attempted to Meta WhatsApp Cloud API at the socket/client layer.
     Fails the test immediately if any HTTP POST/GET is attempted to an external messaging provider while Shadow Mode is active.
     """
     mock_httpx_send.side_effect = RuntimeError("FORBIDDEN: Network call made to external messaging provider in Shadow Mode")

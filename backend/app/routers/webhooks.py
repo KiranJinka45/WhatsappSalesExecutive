@@ -1050,21 +1050,18 @@ async def receive_whatsapp_message(
     try:
         body = await request.json()
     except Exception:
-        # If not JSON, try Form data (Twilio default format)
-        form_data = await request.form()
-        body = dict(form_data)
+        logger.error("Failed to parse JSON body")
+        raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
     logger.info(f"Incoming POST to /api/webhooks/whatsapp. Payload size: {len(payload_bytes)} bytes. X-Hub-Signature-256: {x_hub_signature_256}")
     
-    # Signature Verification for Meta Cloud API Webhooks
-    is_meta_payload = isinstance(body, dict) and ("entry" in body or body.get("object") == "whatsapp_business_account")
-    
-    if is_meta_payload and not settings.TESTING:
+    # 1. Unconditional Signature Verification for Meta Cloud API Webhooks
+    if not settings.TESTING:
         if not settings.WHATSAPP_APP_SECRET:
             if settings.APP_ENV == "development":
                 logger.warning("WHATSAPP_APP_SECRET is not set. Skipping signature check in development mode.")
             else:
-                logger.error("WHATSAPP_APP_SECRET is not set. Rejecting Meta webhook.")
+                logger.error("WHATSAPP_APP_SECRET is not set. Rejecting webhook.")
                 raise HTTPException(status_code=401, detail="Authentication credentials not provided")
         else:
             if not x_hub_signature_256 or not verify_meta_signature(payload_bytes, x_hub_signature_256, settings.WHATSAPP_APP_SECRET):
@@ -1073,11 +1070,8 @@ async def receive_whatsapp_message(
                     payload_bytes,
                     hashlib.sha256
                 ).hexdigest()
-                if settings.APP_ENV == "development":
-                    logger.warning(f"Invalid signature in development (computed: sha256={computed_sig}, received: {x_hub_signature_256}), proceeding anyway.")
-                else:
-                    logger.warning(f"Invalid or missing Meta webhook signature rejected. Computed: sha256={computed_sig}, received: {x_hub_signature_256}")
-                    raise HTTPException(status_code=403, detail="Invalid or missing signature")
+                logger.warning(f"Invalid or missing Meta webhook signature rejected. Computed: sha256={computed_sig}, received: {x_hub_signature_256}")
+                raise HTTPException(status_code=403, detail="Invalid or missing signature")
 
     logger.info(f"Incoming webhook payload: {body}")
 
@@ -1094,106 +1088,44 @@ async def receive_whatsapp_message(
     waba_id = None
     import time
     
-    # 1. Twilio Format parsing
-    if "From" in body:
-        from_raw = body.get("From", "")
-        customer_phone = from_raw.replace("whatsapp:", "").strip()
-        to_raw = body.get("To", "")
-        brand_phone = to_raw.replace("whatsapp:", "").strip()
-        message_text = body.get("Body", "").strip()
-        customer_name = body.get("ProfileName", "Customer")
-        message_id = body.get("MessageSid") or body.get("SmsMessageSid")
-    # 2. WasenderAPI Format parsing (Instant QR-code WhatsApp Gateway)
-    elif "event" in body or ("data" in body and isinstance(body.get("data"), (dict, list))):
-        try:
-            event_name = body.get("event", "")
-            data = body.get("data", {})
-            if isinstance(data, list) and len(data) > 0:
-                data = data[0]
-            if isinstance(data, dict) and "messages" in data:
-                msgs = data.get("messages")
-                if isinstance(msgs, list) and len(msgs) > 0:
-                    data = msgs[0]
-                elif isinstance(msgs, dict):
-                    data = msgs
-            if not isinstance(data, dict):
-                data = body
-
-            # Ignore outgoing messages (fromMe = True)
-            key = data.get("key", {}) if isinstance(data, dict) else {}
-            if isinstance(key, dict) and key.get("fromMe") is True:
-                return {"status": "ignored", "reason": "Self-sent message ignored"}
-            if data.get("fromMe") is True:
-                return {"status": "ignored", "reason": "Self-sent message ignored"}
-
-            remote_jid = (
-                (key.get("remoteJid") if isinstance(key, dict) else None) or
-                data.get("from") or
-                data.get("jid") or
-                data.get("remoteJid") or
-                ""
-            )
-            if "@" in remote_jid:
-                customer_phone = remote_jid.split("@")[0]
-            else:
-                customer_phone = remote_jid
-
-            customer_name = data.get("pushName") or data.get("name") or "Customer"
-            message_id = (key.get("id") if isinstance(key, dict) else None) or data.get("id") or data.get("msgId")
-
-            # Extract text
-            msg_obj = data.get("message", {}) if isinstance(data, dict) else {}
-            if isinstance(msg_obj, dict):
-                message_text = (
-                    msg_obj.get("conversation") or 
-                    (msg_obj.get("extendedTextMessage", {}).get("text") if isinstance(msg_obj.get("extendedTextMessage"), dict) else None) or 
-                    (msg_obj.get("imageMessage", {}).get("caption") if isinstance(msg_obj.get("imageMessage"), dict) else None) or 
-                    ""
-                ).strip()
-            else:
-                message_text = str(data.get("body") or data.get("text") or "").strip()
-
-            if not message_text and (data.get("body") or data.get("text")):
-                message_text = str(data.get("body") or data.get("text") or "").strip()
-
-            brand_phone = (data.get("session") if isinstance(data, dict) else None) or body.get("session") or body.get("sessionId")
-        except Exception as e:
-            logger.error(f"Failed to parse WasenderAPI payload: {e}")
-            return {"status": "ignored", "reason": "Unparseable WasenderAPI payload structure"}
-    # 3. General / Gupshup / Meta Cloud API format parsing
-    elif "entry" in body:
+    # 2. Strict Meta Cloud API format parsing
+    if isinstance(body, dict) and ("entry" in body or body.get("object") == "whatsapp_business_account"):
         try:
             entry = body["entry"][0]
             waba_id = entry.get("id")
             changes = entry["changes"][0]
             value = changes["value"]
-            if "messages" in value:
-                message = value["messages"][0]
-                customer_phone = message["from"]
-                msg_type = message.get("type", "text")
-                contacts = value.get("contacts", [{}])[0]
-                customer_name = contacts.get("profile", {}).get("name", "Customer")
-                brand_phone = value.get("metadata", {}).get("display_phone_number")
-                phone_number_id = value.get("metadata", {}).get("phone_number_id")
-                message_id = message.get("id")
+            
+            # If no messages exist in this update (e.g. status updates), acknowledge and return 200
+            if "messages" not in value:
+                return {"status": "ignored", "reason": "No messages in payload"}
                 
-                if msg_type == "text":
-                    message_text = message.get("text", {}).get("body", "").strip()
-                elif msg_type == "audio":
-                    audio = message.get("audio", {})
-                    media_id = audio.get("id")
-                    mime_type = audio.get("mime_type") or "audio/ogg"
-                    message_text = "🎙️ [Voice Message]"
-                elif msg_type == "image":
-                    image = message.get("image", {})
-                    media_id = image.get("id")
-                    mime_type = image.get("mime_type") or "image/jpeg"
-                    message_text = image.get("caption", "").strip() or "🖼️ [Image]"
+            message = value["messages"][0]
+            customer_phone = message["from"]
+            msg_type = message.get("type", "text")
+            contacts = value.get("contacts", [{}])[0]
+            customer_name = contacts.get("profile", {}).get("name", "Customer")
+            brand_phone = value.get("metadata", {}).get("display_phone_number")
+            phone_number_id = value.get("metadata", {}).get("phone_number_id")
+            message_id = message.get("id")
+            
+            if msg_type == "text":
+                message_text = message.get("text", {}).get("body", "").strip()
+            elif msg_type == "audio":
+                audio = message.get("audio", {})
+                media_id = audio.get("id")
+                mime_type = audio.get("mime_type") or "audio/ogg"
+                message_text = "🎙️ [Voice Message]"
+            elif msg_type == "image":
+                image = message.get("image", {})
+                media_id = image.get("id")
+                mime_type = image.get("mime_type") or "image/jpeg"
+                message_text = image.get("caption", "").strip() or "🖼️ [Image]"
         except (KeyError, IndexError) as e:
             logger.error(f"Failed to parse Meta Cloud API payload: {e}")
-            return {"status": "ignored", "reason": "Unparseable payload structure"}
-    # 4. Direct Test sandbox payload format (allowed in development environment only for tests)
-    elif settings.APP_ENV == "development":
+            raise HTTPException(status_code=422, detail="Unprocessable Entity: Malformed Meta webhook payload")
+    # 3. Direct Test sandbox payload format (allowed in development environment only for tests)
+    elif settings.APP_ENV == "development" and isinstance(body, dict) and "customer_phone" in body:
         customer_phone = body.get("customer_phone")
         brand_phone = body.get("brand_phone")
         message_text = body.get("message", "")
@@ -1207,6 +1139,9 @@ async def receive_whatsapp_message(
             message_text = "🖼️ [Image]"
         msg_hash = hashlib.md5(message_text.encode("utf-8")).hexdigest()[:8] if message_text else "empty"
         message_id = body.get("message_id") or f"test_{customer_phone}_{msg_hash}_{int(time.time())}"
+    else:
+        logger.error("Unrecognized payload structure received. Rejecting non-Meta payload.")
+        raise HTTPException(status_code=422, detail="Unprocessable Entity: Unrecognized payload structure")
 
     if not customer_phone or not message_text:
         return {"status": "ignored", "reason": "No sender phone or message content parsed."}
