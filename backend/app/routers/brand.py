@@ -14,12 +14,21 @@ def subscribe_waba_to_app(waba_id: str, access_token: str) -> bool:
     Subscribes the WhatsApp Business Account to the App so we receive incoming message webhooks.
     """
     # Skip sandbox/mock subscription calls
-    if "demo" in waba_id or "demo" in access_token or "mock" in access_token:
+    if "demo" in str(waba_id) or "demo" in str(access_token) or "mock" in str(access_token):
         logger.info(f"Skipping sandbox/mock webhook subscription for WABA: {waba_id}")
         return True
-    url = f"https://graph.facebook.com/v18.0/{waba_id}/subscribed_apps"
+
+    from ..security import decrypt_token
+    token_to_use = access_token
+    if str(access_token).startswith("enc:"):
+        try:
+            token_to_use = decrypt_token(access_token)
+        except Exception:
+            token_to_use = access_token
+
+    url = f"https://graph.facebook.com/{settings.META_API_VERSION}/{waba_id}/subscribed_apps"
     headers = {
-        "Authorization": f"Bearer {access_token}"
+        "Authorization": f"Bearer {token_to_use}"
     }
     try:
         res = httpx.post(url, headers=headers, timeout=10.0)
@@ -88,6 +97,7 @@ def update_brand_profile(
                         detail="This WhatsApp number is already connected to another brand."
                     )
 
+        from ..security import encrypt_token
         for field, value in update_data.items():
             if field == "policies":
                 existing_policies = org.policies if isinstance(org.policies, dict) else {}
@@ -123,6 +133,14 @@ def update_brand_profile(
                         }
                     )
                     db.add(ks_audit)
+            elif field == "whatsapp_access_token":
+                if value:
+                    enc_val = encrypt_token(str(value).strip())
+                    setattr(org, field, enc_val)
+                    if isinstance(org.policies, dict):
+                        org.policies["whatsapp_access_token"] = enc_val
+                else:
+                    setattr(org, field, None)
             else:
                 setattr(org, field, value)
 
@@ -234,9 +252,11 @@ def test_whatsapp_connection(
             if isinstance(org.policies, dict):
                 org.policies["whatsapp_business_account_id"] = waba
         if payload.whatsapp_access_token:
-            org.whatsapp_access_token = payload.whatsapp_access_token
+            from ..security import encrypt_token
+            enc_tok = encrypt_token(payload.whatsapp_access_token.strip())
+            org.whatsapp_access_token = enc_tok
             if isinstance(org.policies, dict):
-                org.policies["whatsapp_access_token"] = payload.whatsapp_access_token
+                org.policies["whatsapp_access_token"] = enc_tok
         if payload.whatsapp_phone_number_id:
             org.whatsapp_phone_number_id = payload.whatsapp_phone_number_id
             if isinstance(org.policies, dict):
@@ -279,7 +299,14 @@ def test_whatsapp_connection(
     target_phone = (payload and payload.test_phone) or org.whatsapp_number or "+919493348129"
     
     test_msg = f"Hello! This is a test message from Closely AI to confirm your WhatsApp Meta Cloud API integration is live and active for {org.name}! 🚀"
-    res = send_whatsapp_message(target_phone, test_msg, org, from_approval=True, ignore_guardrails=True)
+    try:
+        res = send_whatsapp_message(target_phone, test_msg, org, from_approval=True, ignore_guardrails=True)
+    except Exception as dispatch_err:
+        logger.error(f"Test Meta dispatch failed: {dispatch_err}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Meta Cloud API connection error: {dispatch_err}"
+        )
     
     if res.get("status") in ("failed", "kill_switch_active", "shadow_mode_suppressed"):
         err_msg = res.get("error") or f"Dispatch suppressed by mode '{res.get('status')}'"
