@@ -65,15 +65,17 @@ export default function App() {
         const userData = await res.json();
         setCurrentUserEmail(userData.email || '');
         setIsAuthenticated(true);
-        setToken('cookie-auth');
+        setToken(localStorage.getItem('closely_token') || 'cookie-auth');
         await fetchBrandProfile();
       } else {
+        localStorage.removeItem('closely_token');
         setIsAuthenticated(false);
         setToken(null);
         setBrandPhone(null);
       }
     } catch (err) {
       console.error("Auth check failed:", err);
+      localStorage.removeItem('closely_token');
       setIsAuthenticated(false);
       setToken(null);
       setBrandPhone(null);

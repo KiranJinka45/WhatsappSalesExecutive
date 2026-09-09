@@ -16,7 +16,7 @@ export async function apiFetch(path, options = {}) {
 
   // Attach stored token as Authorization header (fallback for cross-site cookie blocks)
   const token = localStorage.getItem('closely_token');
-  if (token) {
+  if (token && token !== 'null' && token !== 'undefined' && token !== 'cookie-auth' && token !== '[object Object]') {
     if (!options.headers['Authorization'] && !options.headers['authorization']) {
       options.headers['Authorization'] = `Bearer ${token}`;
     }
@@ -24,9 +24,12 @@ export async function apiFetch(path, options = {}) {
   
   const res = await fetch(url, options);
   
-  // Broadcast session expiry if API returns 401 Unauthorized (excluding auth endpoints)
-  if (res.status === 401 && !path.includes('/api/auth/')) {
-    window.dispatchEvent(new CustomEvent('closely_session_expired'));
+  // Broadcast session expiry if API returns 401 Unauthorized
+  if (res.status === 401) {
+    if (!path.includes('/api/auth/login') && !path.includes('/api/auth/signup')) {
+      localStorage.removeItem('closely_token');
+      window.dispatchEvent(new CustomEvent('closely_session_expired'));
+    }
   }
   
   return res;

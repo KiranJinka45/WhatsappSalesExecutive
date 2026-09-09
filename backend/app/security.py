@@ -28,22 +28,25 @@ def get_token(request: Request) -> str:
     # Prefer Authorization header over cookies (critical for tenant isolation and API client priority)
     authorization = request.headers.get("Authorization")
     if authorization and authorization.startswith("Bearer "):
-        return authorization.split(" ")[1]
+        bearer_token = authorization.split(" ")[1].strip()
+        if bearer_token and bearer_token not in ("null", "undefined", "cookie-auth", "Bearer"):
+            return bearer_token
     
     token = request.cookies.get("access_token")
-    if not token:
+    if not token or token in ("null", "undefined"):
         # Only permit query parameter token on SSE / streaming endpoints where custom headers are unsupported by browser EventSource
         path = getattr(request.url, "path", "")
         if "/stream" in path or "/events" in path:
             token = request.query_params.get("token")
 
-    if not token:
+    if not token or token in ("null", "undefined", "cookie-auth"):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
             headers={"WWW-Authenticate": "Bearer"},
         )
     return token
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     try:
         return bcrypt.checkpw(
@@ -76,21 +79,32 @@ def get_current_user(token: str = Depends(get_token), db: Session = Depends(get_
     try:
         payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
         user_id: str = payload.get("sub")
-        if user_id is None:
+        if not user_id:
             raise credentials_exception
-    except JWTError:
+    except Exception:
         raise credentials_exception
         
+    # Safely convert user_id to UUID
+    import uuid as _uuid
+    try:
+        user_uuid = _uuid.UUID(str(user_id)) if not isinstance(user_id, _uuid.UUID) else user_id
+    except (ValueError, TypeError):
+        raise credentials_exception
+
     # Query without tenant restriction first to authenticate the user
     db.is_admin = True
-    log_admin_access("user_authentication_lookup", {"user_id": mask_sensitive_data(user_id)})
+    log_admin_access("user_authentication_lookup", {"user_id": mask_sensitive_data(str(user_id))})
     try:
         from sqlalchemy import text
         from sqlalchemy.orm import joinedload
-        import uuid as _uuid
-        db.execute(text("SET LOCAL app.current_tenant = ''"))
-        user_uuid = _uuid.UUID(str(user_id)) if not isinstance(user_id, _uuid.UUID) else user_id
+        try:
+            db.execute(text("SET LOCAL app.current_tenant = ''"))
+        except Exception:
+            pass
         user = db.query(models.User).options(joinedload(models.User.organization)).filter(models.User.id == user_uuid).first()
+    except Exception as e:
+        logger.warning(f"Error querying user during authentication: {e}")
+        raise credentials_exception
     finally:
         db.is_admin = False
         
@@ -101,8 +115,8 @@ def get_current_user(token: str = Depends(get_token), db: Session = Depends(get_
     tenant_var.set(user.organization_id)
     db.organization_id = user.organization_id
     # Force the local variable update in PostgreSQL immediately to enforce RLS
-    from sqlalchemy import text
     try:
+        from sqlalchemy import text
         db.execute(text("SET LOCAL app.current_tenant = :org_id"), {"org_id": str(user.organization_id)})
     except Exception:
         pass

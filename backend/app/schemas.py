@@ -16,6 +16,15 @@ class LoginResponse(BaseModel):
     status: str = "success"
     message: str = "Successfully authenticated"
     access_token: Optional[str] = None
+    token_type: str = "bearer"
+    user: Optional["UserOut"] = None
+
+class AuthResponse(BaseModel):
+    status: str = "success"
+    message: str = "Successfully authenticated"
+    access_token: str
+    token_type: str = "bearer"
+    user: Optional["UserOut"] = None
 
 
 # Organization
@@ -64,7 +73,7 @@ class UserOut(UserBase):
     id: UUID
     organization_id: UUID
     role: str
-    created_at: datetime
+    created_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 

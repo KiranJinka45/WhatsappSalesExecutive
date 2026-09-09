@@ -52,7 +52,7 @@ def _create_test_tenant(role="owner", policies=None):
         name=org_name,
         whatsapp_number=whatsapp_no,
         whatsapp_phone_number_id="phone_id_kanchi",
-        whatsapp_access_token="valid_test_token",
+        whatsapp_access_token=security.encrypt_token("valid_test_token"),
         policies=default_policies
     )
     db.add(org)

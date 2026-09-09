@@ -9,7 +9,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"], responses={400: {"descript
 
 from fastapi import APIRouter, Depends, HTTPException, status, Response
 
-@router.post("/signup", response_model=schemas.UserOut, status_code=status.HTTP_201_CREATED, responses={400: {"description": "Bad Request"}, 409: {"description": "Conflict"}})
+@router.post("/signup", response_model=schemas.AuthResponse, status_code=status.HTTP_201_CREATED, responses={400: {"description": "Bad Request"}, 409: {"description": "Conflict"}})
 def signup(user_in: schemas.UserCreate, response: Response, db: Session = Depends(get_db)):
     db.is_admin = True
     try:
@@ -49,7 +49,13 @@ def signup(user_in: schemas.UserCreate, response: Response, db: Session = Depend
             secure=True,
             max_age=security.settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         )
-        return new_user
+        return {
+            "status": "success",
+            "message": "User registered successfully",
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user": new_user
+        }
     finally:
         db.is_admin = False
 

@@ -21,41 +21,71 @@ export default function Auth({ onLoginSuccess, initialMode = 'login', onBackToLa
 
     try {
       if (isSignup) {
-        // Signup
+        // 1. Single-Roundtrip Signup
         const signupResponse = await apiFetch('/api/auth/signup', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, name, password, organization_name: orgName }),
+          body: JSON.stringify({ email: email.trim(), name: name.trim(), password, organization_name: orgName.trim() }),
         });
+
+        if (signupResponse.status === 409) {
+          // User already exists — seamlessly attempt login with provided credentials
+          const formData = new URLSearchParams();
+          formData.append('username', email.trim());
+          formData.append('password', password);
+
+          const autoLoginRes = await apiFetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: formData.toString(),
+          });
+
+          if (autoLoginRes.ok) {
+            const data = await autoLoginRes.json();
+            if (data.access_token) {
+              localStorage.setItem('closely_token', data.access_token);
+            }
+            onLoginSuccess();
+            return;
+          } else {
+            setIsSignup(false);
+            throw new Error('An account with this email already exists. Please enter your password to sign in.');
+          }
+        }
 
         if (!signupResponse.ok) {
           const errData = await signupResponse.json();
           throw new Error(errData.detail || 'Signup failed. Please try again.');
         }
-      }
 
-      // Login
-      const formData = new URLSearchParams();
-      formData.append('username', email);
-      formData.append('password', password);
-
-      const loginResponse = await apiFetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: formData.toString(),
-      });
-
-      if (!loginResponse.ok) {
-        const errData = await loginResponse.json();
-        throw new Error(errData.detail || 'Invalid email or password.');
-      }
-
-      await loginResponse.json().then(data => {
+        const data = await signupResponse.json();
         if (data.access_token) {
           localStorage.setItem('closely_token', data.access_token);
         }
-      });
-      onLoginSuccess();
+        onLoginSuccess();
+      } else {
+        // 2. Direct Sign In
+        const formData = new URLSearchParams();
+        formData.append('username', email.trim());
+        formData.append('password', password);
+
+        const loginResponse = await apiFetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: formData.toString(),
+        });
+
+        if (!loginResponse.ok) {
+          const errData = await loginResponse.json();
+          throw new Error(errData.detail || 'Invalid email or password.');
+        }
+
+        const data = await loginResponse.json();
+        if (data.access_token) {
+          localStorage.setItem('closely_token', data.access_token);
+        }
+        onLoginSuccess();
+      }
     } catch (err) {
       setError(err.message);
     } finally {
