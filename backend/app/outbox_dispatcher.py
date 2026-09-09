@@ -93,7 +93,16 @@ def dispatch_outbound_message(
 
     from .security import decrypt_token
     raw_token = getattr(org, "whatsapp_access_token", None) or getattr(settings, "WHATSAPP_ACCESS_TOKEN", None) or "mock_token"
-    token = decrypt_token(raw_token)
+    token = None
+    if raw_token:
+        if str(raw_token).startswith("enc:"):
+            try:
+                token = decrypt_token(raw_token)
+            except Exception as e:
+                logger.warning(f"Error decrypting token in outbox dispatcher: {e}")
+                token = raw_token
+        else:
+            token = raw_token
     phone_id = getattr(org, "whatsapp_phone_number_id", None) or getattr(settings, "WHATSAPP_PHONE_NUMBER_ID", None) or "mock_phone_id"
 
     headers = {

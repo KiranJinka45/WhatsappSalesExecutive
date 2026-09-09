@@ -23,6 +23,17 @@ ERROR_CAT_MANUAL_ACTION = "MANUAL_META_ACTION_REQUIRED"
 ERROR_CAT_COEXISTENCE_AVAILABLE = "COEXISTENCE_FLOW_AVAILABLE"
 ERROR_CAT_UNKNOWN = "UNKNOWN_PROVIDER_ERROR"
 
+def _resolve_plain_token(raw_token: Optional[str]) -> Optional[str]:
+    if not raw_token:
+        return None
+    if str(raw_token).startswith("enc:"):
+        from ..security import decrypt_token
+        try:
+            return decrypt_token(raw_token)
+        except Exception:
+            return raw_token
+    return raw_token
+
 SAFE_ERROR_MESSAGES = {
     ERROR_CAT_ACTIVE_IN_APP: (
         "This number is currently active in WhatsApp or WhatsApp Business app. "
@@ -228,7 +239,7 @@ def request_verification_code(
         raise ValueError("Invalid verification method. Must be 'SMS' or 'VOICE'.")
 
     state = org.whatsapp_onboarding_state or "NOT_CONNECTED"
-    token = org.whatsapp_access_token
+    token = _resolve_plain_token(org.whatsapp_access_token)
     phone_id = org.whatsapp_phone_number_id
     waba_id = org.whatsapp_business_account_id
 
@@ -363,7 +374,7 @@ def verify_registration_code(
             "message": "Invalid code format. Verification code must be numeric."
         }
 
-    token = org.whatsapp_access_token
+    token = _resolve_plain_token(org.whatsapp_access_token)
     phone_id = org.whatsapp_phone_number_id
 
     if not (token and phone_id):
@@ -458,7 +469,7 @@ def activate_live_number(
     PIN never accepted from browser, API body, query params, or headers.
     PIN is never returned, logged, audited, persisted, cached, or exposed.
     """
-    token = org.whatsapp_access_token
+    token = _resolve_plain_token(org.whatsapp_access_token)
     phone_id = org.whatsapp_phone_number_id
     waba_id = org.whatsapp_business_account_id
 

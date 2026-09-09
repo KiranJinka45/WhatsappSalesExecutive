@@ -57,9 +57,24 @@ def send_whatsapp_message(
                     "mock": True
                 }
 
-    from .security import decrypt_token
+    from .security import decrypt_token, encrypt_token
     raw_token = getattr(org, "whatsapp_access_token", None) or policies.get("whatsapp_access_token") or getattr(settings, "WHATSAPP_ACCESS_TOKEN", None)
-    token = decrypt_token(raw_token)
+    token = None
+    if raw_token:
+        if str(raw_token).startswith("enc:"):
+            try:
+                token = decrypt_token(raw_token)
+            except Exception as e:
+                logger.warning(f"Error decrypting WhatsApp access token: {e}")
+                token = raw_token
+        else:
+            token = str(raw_token).strip()
+            # Auto-encrypt legacy plaintext token in database
+            if hasattr(org, "whatsapp_access_token") and org.whatsapp_access_token == raw_token:
+                try:
+                    org.whatsapp_access_token = encrypt_token(token)
+                except Exception:
+                    pass
     phone_id = getattr(org, "whatsapp_phone_number_id", None) or policies.get("whatsapp_phone_number_id") or getattr(settings, "WHATSAPP_PHONE_NUMBER_ID", None)
     
     # Clean destination phone number format (remove non-digits)

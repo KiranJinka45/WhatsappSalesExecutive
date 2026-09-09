@@ -257,6 +257,12 @@ def test_whatsapp_connection(
             org.whatsapp_access_token = enc_tok
             if isinstance(org.policies, dict):
                 org.policies["whatsapp_access_token"] = enc_tok
+        elif org.whatsapp_access_token and not str(org.whatsapp_access_token).startswith("enc:"):
+            from ..security import encrypt_token
+            enc_tok = encrypt_token(str(org.whatsapp_access_token).strip())
+            org.whatsapp_access_token = enc_tok
+            if isinstance(org.policies, dict):
+                org.policies["whatsapp_access_token"] = enc_tok
         if payload.whatsapp_phone_number_id:
             org.whatsapp_phone_number_id = payload.whatsapp_phone_number_id
             if isinstance(org.policies, dict):
@@ -282,6 +288,18 @@ def test_whatsapp_connection(
             flag_modified(org, "policies")
             db.commit()
             db.refresh(org)
+
+    # Ensure any plaintext token on org is auto-encrypted
+    if org.whatsapp_access_token and not str(org.whatsapp_access_token).startswith("enc:"):
+        from ..security import encrypt_token
+        enc_tok = encrypt_token(str(org.whatsapp_access_token).strip())
+        org.whatsapp_access_token = enc_tok
+        if isinstance(org.policies, dict):
+            org.policies["whatsapp_access_token"] = enc_tok
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(org, "policies")
+        db.commit()
+        db.refresh(org)
 
     stored_waba = str(org.whatsapp_business_account_id or "").strip()
     if "@" in stored_waba:
@@ -331,8 +349,17 @@ def get_whatsapp_health(
     Checks the organization's WhatsApp Meta Cloud API connection health,
     masked phone number, WABA ID, and token validity status.
     """
-    from ..security import decrypt_token
-    token = decrypt_token(org.whatsapp_access_token)
+    token = None
+    raw_tok = org.whatsapp_access_token
+    if raw_tok:
+        if str(raw_tok).startswith("enc:"):
+            from ..security import decrypt_token
+            try:
+                token = decrypt_token(raw_tok)
+            except Exception:
+                token = raw_tok
+        else:
+            token = raw_tok
     is_connected = bool(org.is_whatsapp_connected and org.whatsapp_phone_number_id)
     
     expires_at_iso = org.whatsapp_token_expires_at.isoformat() if getattr(org, "whatsapp_token_expires_at", None) else None

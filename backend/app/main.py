@@ -204,6 +204,23 @@ async def lifespan(app: FastAPI):
                 if 'whatsapp_access_token' not in org_columns:
                     logger.info("Auto-repair: Adding 'whatsapp_access_token' to organizations...")
                     conn.execute(text("ALTER TABLE organizations ADD COLUMN whatsapp_access_token TEXT"))
+                else:
+                    # Auto-encrypt any legacy plaintext tokens stored in DB
+                    try:
+                        from .security import encrypt_token
+                        res = conn.execute(text("SELECT id, whatsapp_access_token FROM organizations WHERE whatsapp_access_token IS NOT NULL AND whatsapp_access_token NOT LIKE 'enc:%'"))
+                        rows = res.fetchall()
+                        for row in rows:
+                            org_id, plain_tok = row[0], row[1]
+                            if plain_tok and not str(plain_tok).startswith("enc:"):
+                                enc = encrypt_token(str(plain_tok).strip())
+                                conn.execute(
+                                    text("UPDATE organizations SET whatsapp_access_token = :enc WHERE id = :id"),
+                                    {"enc": enc, "id": org_id}
+                                )
+                                logger.info(f"Auto-repair: Encrypted legacy WhatsApp token for organization {org_id}")
+                    except Exception as enc_err:
+                        logger.debug(f"Legacy token auto-encryption check skipped: {enc_err}")
 
                 # Check if whatsapp_onboarding_audit_logs table exists
                 if 'whatsapp_onboarding_audit_logs' not in inspector.get_table_names():
