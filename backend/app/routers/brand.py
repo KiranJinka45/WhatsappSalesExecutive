@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from ..database import get_db
+from ..config import settings
 from .. import models, schemas, security
 
 import httpx
@@ -151,7 +152,10 @@ def update_brand_profile(
         waba_id = org.whatsapp_business_account_id
         access_token = org.whatsapp_access_token
         if waba_id and access_token:
-            subscribe_waba_to_app(waba_id, access_token)
+            try:
+                subscribe_waba_to_app(waba_id, access_token)
+            except Exception as sub_err:
+                logger.warning(f"Non-blocking webhook subscription notice: {sub_err}")
             
         return org
     except HTTPException:
