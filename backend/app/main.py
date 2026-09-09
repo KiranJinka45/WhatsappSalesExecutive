@@ -189,6 +189,21 @@ async def lifespan(app: FastAPI):
                 if 'whatsapp_onboarding_metadata' not in org_columns:
                     logger.info("Auto-repair: Adding 'whatsapp_onboarding_metadata' to organizations...")
                     conn.execute(text("ALTER TABLE organizations ADD COLUMN whatsapp_onboarding_metadata JSONB DEFAULT '{}'::jsonb"))
+                if 'whatsapp_connected_at' not in org_columns:
+                    logger.info("Auto-repair: Adding 'whatsapp_connected_at' to organizations...")
+                    conn.execute(text("ALTER TABLE organizations ADD COLUMN whatsapp_connected_at TIMESTAMP WITH TIME ZONE"))
+                if 'whatsapp_token_expires_at' not in org_columns:
+                    logger.info("Auto-repair: Adding 'whatsapp_token_expires_at' to organizations...")
+                    conn.execute(text("ALTER TABLE organizations ADD COLUMN whatsapp_token_expires_at TIMESTAMP WITH TIME ZONE"))
+                if 'whatsapp_business_account_id' not in org_columns:
+                    logger.info("Auto-repair: Adding 'whatsapp_business_account_id' to organizations...")
+                    conn.execute(text("ALTER TABLE organizations ADD COLUMN whatsapp_business_account_id VARCHAR(100)"))
+                if 'whatsapp_phone_number_id' not in org_columns:
+                    logger.info("Auto-repair: Adding 'whatsapp_phone_number_id' to organizations...")
+                    conn.execute(text("ALTER TABLE organizations ADD COLUMN whatsapp_phone_number_id VARCHAR(100)"))
+                if 'whatsapp_access_token' not in org_columns:
+                    logger.info("Auto-repair: Adding 'whatsapp_access_token' to organizations...")
+                    conn.execute(text("ALTER TABLE organizations ADD COLUMN whatsapp_access_token TEXT"))
 
                 # Check if whatsapp_onboarding_audit_logs table exists
                 if 'whatsapp_onboarding_audit_logs' not in inspector.get_table_names():

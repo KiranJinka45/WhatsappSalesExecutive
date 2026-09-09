@@ -63,7 +63,7 @@ class OrganizationOut(OrganizationBase):
 # User
 class UserBase(BaseModel):
     email: EmailStr
-    name: str
+    name: Optional[str] = "User"
 
 class UserCreate(UserBase):
     password: str
@@ -72,7 +72,7 @@ class UserCreate(UserBase):
 class UserOut(UserBase):
     id: UUID
     organization_id: UUID
-    role: str
+    role: Optional[str] = "owner"
     created_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)

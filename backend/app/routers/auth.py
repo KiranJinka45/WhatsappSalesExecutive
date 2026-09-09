@@ -103,4 +103,15 @@ def logout(response: Response):
 
 @router.get("/me", response_model=schemas.UserOut, responses={401: {"description": "Unauthorized"}})
 def read_users_me(current_user: models.User = Depends(security.get_current_user)):
-    return current_user
+    try:
+        return {
+            "id": current_user.id,
+            "email": current_user.email,
+            "name": current_user.name or "User",
+            "organization_id": current_user.organization_id,
+            "role": current_user.role or "owner",
+            "created_at": current_user.created_at
+        }
+    except Exception as e:
+        logger.error(f"Error in read_users_me: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User session invalid")
