@@ -745,6 +745,7 @@ def exchange_embedded_signup_code(
         debug_url = f"{settings.WHATSAPP_API_BASE_URL}/{settings.META_API_VERSION}/debug_token"
         headers = {"Authorization": f"Bearer {access_token}"}
         debug_resp = httpx.get(debug_url, params={"input_token": access_token}, headers=headers, timeout=10.0)
+        debug_data = {}
         if debug_resp.status_code == 200:
             debug_data = debug_resp.json().get("data", {})
             if debug_data.get("is_valid") is False:
@@ -760,31 +761,86 @@ def exchange_embedded_signup_code(
         discovered_display_number = org.whatsapp_number or "+919900001111"
 
         phone_url = f"{settings.WHATSAPP_API_BASE_URL}/{settings.META_API_VERSION}/{waba_id}/phone_numbers"
-        phone_resp = httpx.get(phone_url, headers=headers, timeout=10.0)
-        if phone_resp.status_code == 200:
-            phones_list = phone_resp.json().get("data", [])
-            if phones_list:
-                # Find matching hint or default to first verified
-                matched = next((p for p in phones_list if p.get("id") == phone_number_id_hint), phones_list[0])
-                discovered_phone_id = matched.get("id", discovered_phone_id)
-                discovered_display_number = matched.get("display_phone_number", discovered_display_number)
+        try:
+            phone_resp = httpx.get(phone_url, headers=headers, timeout=10.0)
+            if phone_resp.status_code == 200:
+                phones_list = phone_resp.json().get("data", [])
+                if phones_list:
+                    matched = None
+                    # 1. Exact match against merchant's selected phone_number_id from Embedded Signup popup
+                    if phone_number_id_hint:
+                        matched = next((p for p in phones_list if str(p.get("id")) == str(phone_number_id_hint)), None)
+
+                    # 2. If no hint match found and only one number exists in WABA, select it
+                    if not matched and len(phones_list) == 1:
+                        matched = phones_list[0]
+                    elif not matched and len(phones_list) > 1:
+                        # 3. If multiple numbers exist without a matching hint, prioritize verified number
+                        logger.warning(
+                            f"WABA {waba_id} has {len(phones_list)} phone numbers but hint '{phone_number_id_hint}' did not match. "
+                            f"Selecting first verified number."
+                        )
+                        verified_phones = [p for p in phones_list if p.get("code_verification_status") == "VERIFIED"]
+                        matched = verified_phones[0] if verified_phones else phones_list[0]
+
+                    if matched:
+                        discovered_phone_id = matched.get("id", discovered_phone_id)
+                        discovered_display_number = matched.get("display_phone_number", discovered_display_number)
+        except Exception as p_err:
+            logger.warning(f"Phone discovery request failed ({p_err}). Using hint.")
 
         if not discovered_phone_id:
             discovered_phone_id = phone_number_id_hint or "phone_discovered_default"
 
-        # 6. Check for Meta Developer Sandbox test numbers
+        # 6. Subscribe App to WABA Webhook events (critical for multi-tenant webhook delivery)
+        try:
+            sub_url = f"{settings.WHATSAPP_API_BASE_URL}/{settings.META_API_VERSION}/{waba_id}/subscribed_apps"
+            sub_resp = httpx.post(sub_url, headers=headers, timeout=10.0)
+            if sub_resp.status_code == 200:
+                logger.info(f"Successfully subscribed app to WABA {waba_id} webhooks.")
+            else:
+                logger.warning(f"WABA webhook subscription returned status {sub_resp.status_code}: {sub_resp.text}")
+        except Exception as sub_err:
+            logger.warning(f"Failed to subscribe app to WABA webhooks ({sub_err}). Continuing onboarding.")
+
+        # 7. Register phone number with Meta Cloud API messaging
+        try:
+            reg_url = f"{settings.WHATSAPP_API_BASE_URL}/{settings.META_API_VERSION}/{discovered_phone_id}/register"
+            reg_resp = httpx.post(
+                reg_url,
+                json={"messaging_product": "whatsapp", "pin": "123456"},
+                headers=headers,
+                timeout=10.0
+            )
+            if reg_resp.status_code == 200:
+                logger.info(f"Successfully registered phone {discovered_phone_id} for Cloud API messaging.")
+        except Exception as reg_err:
+            logger.warning(f"Phone registration call skipped or already registered: {reg_err}")
+
+        # 8. Check for Meta Developer Sandbox test numbers
         is_sandbox = _is_test_number(discovered_phone_id, discovered_display_number)
 
-        # 7. Authoritative Status & Readiness Check
-        status_url = f"{settings.WHATSAPP_API_BASE_URL}/{settings.META_API_VERSION}/{discovered_phone_id}"
-        status_resp = httpx.get(status_url, headers=headers, timeout=10.0)
-        status_json = status_resp.json() if status_resp.content else {}
+        # 9. Authoritative Status & Readiness Check
+        status_json = {}
+        try:
+            status_url = f"{settings.WHATSAPP_API_BASE_URL}/{settings.META_API_VERSION}/{discovered_phone_id}"
+            status_resp = httpx.get(status_url, headers=headers, timeout=10.0)
+            status_json = status_resp.json() if status_resp.content else {}
+        except Exception as s_err:
+            logger.warning(f"Phone status request skipped ({s_err}).")
 
-        # 8. Save discovered resources to Organization tenant
+        # 10. Save discovered resources and encrypted access token to Organization tenant
+        from ..security import encrypt_token
         org.whatsapp_business_account_id = waba_id
         org.whatsapp_phone_number_id = discovered_phone_id
         org.whatsapp_number = discovered_display_number
-        org.whatsapp_access_token = access_token
+        org.whatsapp_access_token = encrypt_token(access_token)
+        org.whatsapp_connected_at = datetime.now(timezone.utc)
+        if debug_data.get("expires_at"):
+            try:
+                org.whatsapp_token_expires_at = datetime.fromtimestamp(debug_data["expires_at"], tz=timezone.utc)
+            except Exception:
+                pass
 
         if is_sandbox:
             org.is_whatsapp_connected = 0

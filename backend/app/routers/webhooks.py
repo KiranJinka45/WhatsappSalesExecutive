@@ -1096,8 +1096,41 @@ async def receive_whatsapp_message(
             changes = entry["changes"][0]
             value = changes["value"]
             
-            # If no messages exist in this update (e.g. status updates), acknowledge and return 200
+            # If no messages exist in this update (e.g. status updates), parse statuses payload
             if "messages" not in value:
+                if "statuses" in value:
+                    statuses_list = value.get("statuses", [])
+                    updated_count = 0
+                    for st in statuses_list:
+                        wamid = st.get("id")
+                        raw_status = (st.get("status") or "").upper()
+                        if not wamid or not raw_status:
+                            continue
+                        
+                        outbound = db.query(models.OutboundMessage).filter(
+                            (models.OutboundMessage.provider_message_id == wamid) |
+                            (models.OutboundMessage.provider_idempotency_key == wamid)
+                        ).first()
+
+                        if outbound:
+                            outbound.status = raw_status
+                            if raw_status == "FAILED":
+                                errs = st.get("errors") or [{}]
+                                outbound.last_error = str(errs[0].get("title", "Delivery failed"))
+                            
+                            if outbound.approval_request_id:
+                                appr = db.query(models.ApprovalRequest).filter(models.ApprovalRequest.id == outbound.approval_request_id).first()
+                                if appr:
+                                    if raw_status in ["SENT", "DELIVERED", "READ"]:
+                                        appr.status = "SENT"
+                                        if not appr.sent_at:
+                                            appr.sent_at = datetime.now(timezone.utc)
+                                    elif raw_status == "FAILED":
+                                        appr.status = "SEND_FAILED"
+                            db.commit()
+                            updated_count += 1
+                            logger.info(f"Updated OutboundMessage {outbound.id} status to {raw_status} for wamid {wamid}")
+                    return {"status": "success", "processed_statuses": updated_count}
                 return {"status": "ignored", "reason": "No messages in payload"}
                 
             message = value["messages"][0]
@@ -1124,7 +1157,31 @@ async def receive_whatsapp_message(
         except (KeyError, IndexError) as e:
             logger.error(f"Failed to parse Meta Cloud API payload: {e}")
             raise HTTPException(status_code=422, detail="Unprocessable Entity: Malformed Meta webhook payload")
-    # 3. Direct Test sandbox payload format (allowed in development environment only for tests)
+    # 3. Direct status payload or test sandbox payload format
+    elif isinstance(body, dict) and "statuses" in body:
+        statuses_list = body.get("statuses", [])
+        updated_count = 0
+        for st in statuses_list:
+            wamid = st.get("id") or st.get("wamid") or st.get("provider_message_id")
+            raw_status = (st.get("status") or "").upper()
+            if not wamid or not raw_status:
+                continue
+            outbound = db.query(models.OutboundMessage).filter(
+                (models.OutboundMessage.provider_message_id == wamid) |
+                (models.OutboundMessage.provider_idempotency_key == wamid)
+            ).first()
+            if outbound:
+                outbound.status = raw_status
+                if outbound.approval_request_id and raw_status in ["SENT", "DELIVERED", "READ"]:
+                    appr = db.query(models.ApprovalRequest).filter(models.ApprovalRequest.id == outbound.approval_request_id).first()
+                    if appr:
+                        appr.status = "SENT"
+                        if not appr.sent_at:
+                            appr.sent_at = datetime.now(timezone.utc)
+                db.commit()
+                updated_count += 1
+                logger.info(f"Updated OutboundMessage {outbound.id} status to {raw_status} for wamid {wamid}")
+        return {"status": "success", "processed_statuses": updated_count}
     elif settings.APP_ENV == "development" and isinstance(body, dict) and "customer_phone" in body:
         customer_phone = body.get("customer_phone")
         brand_phone = body.get("brand_phone")
@@ -1184,29 +1241,38 @@ async def receive_whatsapp_message(
         db.execute(text("SET LOCAL app.current_tenant = ''"))
         org = None
         if phone_number_id:
-            org = db.query(models.Organization).filter(models.Organization.whatsapp_phone_number_id == phone_number_id).first()
+            org = db.query(models.Organization).filter(
+                models.Organization.whatsapp_phone_number_id == phone_number_id,
+                models.Organization.deleted_at.is_(None)
+            ).first()
         if not org and waba_id:
-            org = db.query(models.Organization).filter(models.Organization.whatsapp_business_account_id == waba_id).first()
+            org = db.query(models.Organization).filter(
+                models.Organization.whatsapp_business_account_id == waba_id,
+                models.Organization.deleted_at.is_(None)
+            ).first()
         if not org and brand_phone:
-            org = db.query(models.Organization).filter(models.Organization.whatsapp_number == brand_phone).first()
+            org = db.query(models.Organization).filter(
+                models.Organization.whatsapp_number == brand_phone,
+                models.Organization.deleted_at.is_(None)
+            ).first()
             if not org:
-                # Fallback to normalized comparison of last 10 digits to prevent formatting mismatches (+ prefix, spaces, dashes)
+                # Fallback to normalized comparison of digits to prevent formatting mismatches
                 clean_brand = "".join(c for c in brand_phone if c.isdigit())
                 if clean_brand:
-                    all_orgs = db.query(models.Organization).filter(models.Organization.whatsapp_number.isnot(None)).all()
+                    all_orgs = db.query(models.Organization).filter(
+                        models.Organization.whatsapp_number.isnot(None),
+                        models.Organization.deleted_at.is_(None)
+                    ).all()
                     for o in all_orgs:
                         clean_db = "".join(c for c in o.whatsapp_number if c.isdigit())
                         if clean_brand == clean_db or (len(clean_brand) >= 10 and len(clean_db) >= 10 and clean_brand[-10:] == clean_db[-10:]):
                             org = o
                             break
         
-        # Fallback to the first non-deleted organization in a single-tenant deployment so webhook messages are never lost
+        # Strict Multi-Tenant Isolation: Never fall back to another merchant's organization
         if not org:
-            org = db.query(models.Organization).filter(models.Organization.deleted_at.is_(None)).order_by(models.Organization.created_at.asc()).first()
-            
-        if not org:
-            logger.error(f"Rejecting webhook message. Brand not found for phone_number_id={phone_number_id} and brand_phone={brand_phone}.")
-            return {"status": "error", "reason": "Tenant matching failed. Unknown brand."}
+            logger.warning(f"Webhook ignored: Unknown tenant for phone_number_id={phone_number_id}, waba_id={waba_id}, brand_phone={brand_phone}.")
+            return {"status": "ignored", "reason": "Unknown tenant phone_number_id or WABA"}
     finally:
         db.is_admin = old_is_admin
         tenant_var.reset(token)

@@ -57,7 +57,9 @@ def send_whatsapp_message(
                     "mock": True
                 }
 
-    token = getattr(org, "whatsapp_access_token", None) or policies.get("whatsapp_access_token") or getattr(settings, "WHATSAPP_ACCESS_TOKEN", None)
+    from .security import decrypt_token
+    raw_token = getattr(org, "whatsapp_access_token", None) or policies.get("whatsapp_access_token") or getattr(settings, "WHATSAPP_ACCESS_TOKEN", None)
+    token = decrypt_token(raw_token)
     phone_id = getattr(org, "whatsapp_phone_number_id", None) or policies.get("whatsapp_phone_number_id") or getattr(settings, "WHATSAPP_PHONE_NUMBER_ID", None)
     
     # Clean destination phone number format (remove non-digits)

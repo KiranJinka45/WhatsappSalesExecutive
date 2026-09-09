@@ -11,6 +11,7 @@ from ..catalog_service import generate_product_embedding_task
 
 router = APIRouter(prefix="/api/catalog", tags=["catalog"], responses={401: {"description": "Unauthorized"}, 400: {"description": "Bad Request"}})
 
+@router.post("/import/csv", status_code=status.HTTP_200_OK)
 @router.post("/upload", status_code=status.HTTP_200_OK)
 async def upload_catalog(
     background_tasks: BackgroundTasks,

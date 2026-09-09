@@ -294,6 +294,39 @@ def test_whatsapp_connection(
         "details": res
     }
 
+@router.get("/whatsapp/health")
+def get_whatsapp_health(
+    db: Session = Depends(get_db),
+    org: models.Organization = Depends(security.get_current_org),
+    current_user: models.User = Depends(security.get_current_user)
+):
+    """
+    Checks the organization's WhatsApp Meta Cloud API connection health,
+    masked phone number, WABA ID, and token validity status.
+    """
+    from ..security import decrypt_token
+    token = decrypt_token(org.whatsapp_access_token)
+    is_connected = bool(org.is_whatsapp_connected and org.whatsapp_phone_number_id)
+    
+    expires_at_iso = org.whatsapp_token_expires_at.isoformat() if getattr(org, "whatsapp_token_expires_at", None) else None
+    connected_at_iso = org.whatsapp_connected_at.isoformat() if getattr(org, "whatsapp_connected_at", None) else None
+    
+    masked_phone = None
+    if org.whatsapp_number:
+        num_str = str(org.whatsapp_number)
+        masked_phone = f"{num_str[:3]}****{num_str[-4:]}" if len(num_str) > 6 else num_str
+
+    return {
+        "is_connected": is_connected,
+        "onboarding_state": org.whatsapp_onboarding_state,
+        "waba_id": org.whatsapp_business_account_id,
+        "phone_number_id": org.whatsapp_phone_number_id,
+        "display_phone_number": masked_phone,
+        "connected_at": connected_at_iso,
+        "token_expires_at": expires_at_iso,
+        "token_configured": bool(token)
+    }
+
 @router.delete("/profile", status_code=status.HTTP_204_NO_CONTENT)
 def delete_brand_profile(
     db: Session = Depends(get_db),

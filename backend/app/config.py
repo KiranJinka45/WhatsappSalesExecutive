@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
     REDIS_URL: str = "redis://localhost:6379/0"
     WHATSAPP_API_BASE_URL: str = "https://graph.facebook.com"
-    META_API_VERSION: str = "v20.0"
+    META_API_VERSION: str = "v21.0"
     
     # WhatsApp / Meta Webhook & Embedded Signup Config
     META_APP_ID: Optional[str] = None

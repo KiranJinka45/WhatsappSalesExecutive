@@ -91,7 +91,9 @@ def dispatch_outbound_message(
         }
     }
 
-    token = getattr(org, "whatsapp_access_token", None) or getattr(settings, "WHATSAPP_ACCESS_TOKEN", None) or "mock_token"
+    from .security import decrypt_token
+    raw_token = getattr(org, "whatsapp_access_token", None) or getattr(settings, "WHATSAPP_ACCESS_TOKEN", None) or "mock_token"
+    token = decrypt_token(raw_token)
     phone_id = getattr(org, "whatsapp_phone_number_id", None) or getattr(settings, "WHATSAPP_PHONE_NUMBER_ID", None) or "mock_phone_id"
 
     headers = {

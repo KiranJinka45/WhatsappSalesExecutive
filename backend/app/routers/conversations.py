@@ -8,6 +8,10 @@ import json
 from ..database import get_db
 from .. import models, schemas, security
 from ..connection_manager import manager
+from ..metrics import ACTIVE_SSE_CONNECTIONS
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/conversations", tags=["conversations"], responses={401: {"description": "Unauthorized"}, 400: {"description": "Bad Request"}})
 
@@ -20,6 +24,7 @@ async def stream_conversations(
     and conversation status transitions for the active organization.
     """
     queue = manager.register(str(org.id))
+    ACTIVE_SSE_CONNECTIONS.inc()
 
     async def event_generator():
         try:
@@ -37,6 +42,7 @@ async def stream_conversations(
             logger.warning(f"SSE stream error for Org {org.id}: {e}")
         finally:
             manager.disconnect(str(org.id), queue)
+            ACTIVE_SSE_CONNECTIONS.dec()
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 

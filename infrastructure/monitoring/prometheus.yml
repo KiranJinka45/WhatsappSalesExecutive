@@ -1,0 +1,40 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'closely-ai-monitor'
+    environment: 'production'
+
+rule_files:
+  - 'alerts.yml'
+
+scrape_configs:
+  # 1. FastAPI Backend Telemetry (REST RED Metrics + Custom Active SSE Gauge)
+  - job_name: 'closely-backend'
+    scrape_interval: 10s
+    dns_sd_configs:
+      - names:
+          - 'backend.closely.internal'
+        type: 'A'
+        port: 9090
+    metrics_path: '/metrics'
+
+  # 2. Closely AI Asynchronous Worker Telemetry
+  - job_name: 'closely-worker'
+    scrape_interval: 10s
+    dns_sd_configs:
+      - names:
+          - 'worker.closely.internal'
+        type: 'A'
+        port: 9091
+    metrics_path: '/metrics'
+
+  # 3. Redis Exporter (Queue Depths & Memory)
+  - job_name: 'redis-exporter'
+    scrape_interval: 10s
+    dns_sd_configs:
+      - names:
+          - 'redis-exporter.closely.internal'
+        type: 'A'
+        port: 9121
+    metrics_path: '/metrics'

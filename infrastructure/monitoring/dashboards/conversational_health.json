@@ -1,0 +1,88 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": true,
+  "panels": [
+    {
+      "title": "Active SSE Connections (Real-Time Gauges)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "fastapi_active_sse_connections",
+          "legendFormat": "Active SSE Streams",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 20 }
+        }
+      }
+    },
+    {
+      "title": "Client Drop Rate & Nginx 499 Disconnects",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total{status=\"499\"}[1m])) or vector(0)",
+          "legendFormat": "HTTP 499 Client Closed",
+          "refId": "A"
+        },
+        {
+          "expr": "clamp_min(-deriv(fastapi_active_sse_connections[1m]), 0)",
+          "legendFormat": "SSE Disconnect Velocity",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "title": "FastAPI HTTP Request Rate (RED)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum by (status) (rate(http_requests_total[1m]))",
+          "legendFormat": "Status {{status}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "FastAPI HTTP Latency (p50, p95, p99)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p50 Latency",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95 Latency",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p99 Latency",
+          "refId": "C"
+        }
+      ]
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["closely-ai", "sse", "conversations"],
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Closely AI - Conversational Health & SSE Stability",
+  "uid": "closely-conversational-health"
+}

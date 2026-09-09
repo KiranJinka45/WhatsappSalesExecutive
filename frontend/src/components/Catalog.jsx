@@ -152,7 +152,7 @@ export default function Catalog({ token }) {
     formData.append('file', file);
 
     try {
-      const res = await apiFetch(`/api/catalog/upload?mode=${importMode}`, {
+      const res = await apiFetch(`/api/catalog/import/csv?mode=${importMode}`, {
         method: 'POST',
         body: formData
       });
@@ -169,7 +169,8 @@ export default function Catalog({ token }) {
       }
 
       const data = await res.json();
-      setSuccess(`Upload ${data.status}! Created ${data.created} and updated ${data.updated} items.`);
+      setSuccess(`Import completed: ${data.status.toUpperCase()}`);
+      setImportSummary(data);
       if (data.errors && data.errors.length > 0) {
         setImportErrors(data.errors);
       }
@@ -181,6 +182,8 @@ export default function Catalog({ token }) {
       setLoading(false);
     }
   };
+
+  const [importSummary, setImportSummary] = useState(null);
 
   const handleDeleteProduct = async (id) => {
     if (!window.confirm("Are you sure you want to delete this product?")) return;
@@ -202,19 +205,22 @@ export default function Catalog({ token }) {
       <div style={styles.leftCol}>
         {/* 1. Bulk Catalog Upload Zone */}
         <div className="glass-panel" style={styles.card}>
-          <h3>Bulk Catalog Sync (CSV)</h3>
-          <p style={styles.subtitle}>Upload CSV to bulk create/sync products and compute vector embeddings.</p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3 style={{ margin: 0 }}>Bulk Catalog Ingestion (CSV)</h3>
+            <span className="badge badge-ai" style={{ fontSize: '0.7rem' }}>ON CONFLICT UPSERT</span>
+          </div>
+          <p style={styles.subtitle}>Upload CSV to atomically upsert product inventory, validate business constraints, and trigger vector embeddings.</p>
           
           <form onSubmit={handleUploadCSV} style={styles.uploadForm}>
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.5rem' }}>
-              <label style={{ fontSize: '0.8rem', opacity: 0.8 }}>Mode:</label>
+              <label style={{ fontSize: '0.8rem', opacity: 0.8 }}>Ingestion Mode:</label>
               <select 
                 value={importMode} 
                 onChange={(e) => setImportMode(e.target.value)}
                 style={{ padding: '0.2rem 0.4rem', fontSize: '0.75rem', borderRadius: '4px', background: 'rgba(255,255,255,0.05)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
               >
                 <option value="atomic">Atomic (All or Nothing)</option>
-                <option value="partial">Partial (Import valid rows, report errors)</option>
+                <option value="partial">Partial (Tolerate errors, upsert valid)</option>
               </select>
             </div>
             <input 
@@ -225,17 +231,48 @@ export default function Catalog({ token }) {
               required
             />
             <button type="submit" className="btn btn-primary" disabled={loading}>
-              {loading ? 'Processing & Embedding...' : '⬆️ Sync Catalog'}
+              {loading ? 'Processing & Upserting...' : '⬆️ Import CSV Catalog'}
             </button>
           </form>
+
           {error && <div style={styles.error}>{error}</div>}
           {success && <div style={styles.success}>{success}</div>}
+
+          {/* Structured Import Summary Report */}
+          {importSummary && (
+            <div style={{ marginTop: '0.75rem', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--glass-border)', padding: '0.75rem', borderRadius: '6px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                <strong style={{ fontSize: '0.85rem' }}>📊 Ingestion Summary</strong>
+                <span className={`badge ${importSummary.status === 'success' ? 'badge-success' : 'badge-warning'}`} style={{ fontSize: '0.7rem' }}>
+                  {importSummary.status}
+                </span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem', textAlign: 'center', marginBottom: '0.5rem' }}>
+                <div style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)', padding: '0.4rem', borderRadius: '4px' }}>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#10b981' }}>{importSummary.created}</div>
+                  <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)' }}>Created</div>
+                </div>
+                <div style={{ background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.2)', padding: '0.4rem', borderRadius: '4px' }}>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#3b82f6' }}>{importSummary.updated}</div>
+                  <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)' }}>Updated</div>
+                </div>
+                <div style={{ background: importSummary.invalid_rows > 0 ? 'rgba(239, 68, 68, 0.1)' : 'rgba(255, 255, 255, 0.05)', border: importSummary.invalid_rows > 0 ? '1px solid rgba(239, 68, 68, 0.2)' : '1px solid var(--glass-border)', padding: '0.4rem', borderRadius: '4px' }}>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: importSummary.invalid_rows > 0 ? '#ef4444' : 'var(--text-secondary)' }}>{importSummary.invalid_rows}</div>
+                  <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)' }}>Invalid Rows</div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {importErrors.length > 0 && (
-            <div style={{ marginTop: '0.5rem', maxHeight: '120px', overflowY: 'auto', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '0.5rem', borderRadius: '4px', fontSize: '0.75rem' }}>
-              <strong>Row Errors ({importErrors.length}):</strong>
+            <div style={{ marginTop: '0.5rem', maxHeight: '140px', overflowY: 'auto', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '0.5rem', borderRadius: '4px', fontSize: '0.75rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+                <strong style={{ color: '#fca5a5' }}>Validation Errors ({importErrors.length}):</strong>
+                <span style={{ fontSize: '0.65rem', color: '#fca5a5' }}>Pydantic / Constraints</span>
+              </div>
               <ul style={{ margin: '0.25rem 0 0 1rem', padding: 0 }}>
                 {importErrors.map((err, i) => (
-                  <li key={i} style={{ color: '#fca5a5' }}>{err}</li>
+                  <li key={i} style={{ color: '#fca5a5', marginBottom: '0.2rem' }}>{err}</li>
                 ))}
               </ul>
             </div>

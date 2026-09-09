@@ -5,7 +5,7 @@
 
 let sdkPromise = null;
 
-export function loadMetaSdk(appId, apiVersion = 'v20.0') {
+export function loadMetaSdk(appId, apiVersion = 'v21.0') {
   if (window.FB) {
     return Promise.resolve(window.FB);
   }

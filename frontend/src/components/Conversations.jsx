@@ -50,6 +50,8 @@ export default function Conversations({ token, brandPhone, userEmail }) {
   const [replayStepIndex, setReplayStepIndex] = useState(-1);
   const [pendingApprovals, setPendingApprovals] = useState([]);
   const [editApprovalText, setEditApprovalText] = useState('');
+  const [isSubmittingApproval, setIsSubmittingApproval] = useState(false);
+  const [approvalError, setApprovalError] = useState('');
   const [sseStatus, setSseStatus] = useState('connecting');
   const messagesEndRef = useRef(null);
 
@@ -227,6 +229,9 @@ export default function Conversations({ token, brandPhone, userEmail }) {
   };
 
   const handleRespondToApproval = async (approvalId, action, text = '') => {
+    if (isSubmittingApproval) return;
+    setIsSubmittingApproval(true);
+    setApprovalError('');
     try {
       const payload = { action };
       if (action === 'edit_and_send' || action === 'edit') {
@@ -245,9 +250,15 @@ export default function Conversations({ token, brandPhone, userEmail }) {
         fetchPendingApprovals();
         fetchConversations();
         if (selectedConvId) fetchChatDetail(selectedConvId);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setApprovalError(errData.detail || 'Approval request failed. Please check inventory or retry.');
       }
     } catch (err) {
       console.error("Error responding to approval:", err);
+      setApprovalError(err.message || 'Network error during approval dispatch.');
+    } finally {
+      setIsSubmittingApproval(false);
     }
   };
 
@@ -590,30 +601,122 @@ export default function Conversations({ token, brandPhone, userEmail }) {
               };
               const risk = getRiskLabel(approval.risk_score || 0);
 
+              // Find the customer's trigger message
+              const customerMsgs = (chatDetail.messages || []).filter(m => m.sender === 'customer');
+              const lastCustomerMsg = customerMsgs.length > 0 ? customerMsgs[customerMsgs.length - 1] : null;
+
+              const priceEntries = Object.entries(approval.price_snapshot || {});
+              const stockEntries = Object.entries(approval.stock_snapshot || {});
+              const hasSqlEvidence = priceEntries.length > 0 || stockEntries.length > 0;
+
               return (
-                <div style={{ ...styles.chatInputForm, flexDirection: 'column', alignItems: 'stretch', backgroundColor: 'rgba(255, 204, 0, 0.1)', border: '1px solid rgba(255, 204, 0, 0.4)' }}>
-                  <div style={{ marginBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div>
-                      <strong style={{ color: '#ffcc00' }}>⚠️ AI Requesting Approval</strong>
-                      <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Rule Triggered: <em>{approval.reason || 'Escalation required'}</em></div>
+                <div style={{ ...styles.chatInputForm, flexDirection: 'column', alignItems: 'stretch', backgroundColor: 'rgba(255, 204, 0, 0.07)', border: '1px solid rgba(255, 204, 0, 0.35)', padding: '1rem', borderRadius: '8px' }}>
+                  {/* Header */}
+                  <div style={{ marginBottom: '0.65rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <strong style={{ color: '#ffcc00', fontSize: '0.95rem' }}>⚠️ Human-in-the-Loop AI Approval Required</strong>
+                      <span className="badge badge-warning" style={{ fontSize: '0.65rem' }}>PESSIMISTIC LOCK</span>
                     </div>
-                    <div style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.8rem', backgroundColor: risk.color + '22', color: risk.color, border: `1px solid ${risk.color}55` }}>
+                    <div style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold', backgroundColor: risk.color + '22', color: risk.color, border: `1px solid ${risk.color}55` }}>
                       {risk.label} ({approval.risk_score})
                     </div>
                   </div>
-                  <div style={{ marginBottom: '0.5rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                    <strong>Intent:</strong> {approval.metadata?.intent || 'Unknown'}<br />
+
+                  {/* Customer Message Context */}
+                  {lastCustomerMsg && (
+                    <div style={{ marginBottom: '0.65rem', background: 'rgba(0, 0, 0, 0.25)', padding: '0.5rem 0.75rem', borderRadius: '4px', borderLeft: '3px solid #6366f1' }}>
+                      <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 'bold', textTransform: 'uppercase' }}>Customer Inquiry</div>
+                      <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', marginTop: '0.15rem' }}>"{lastCustomerMsg.content}"</div>
+                    </div>
+                  )}
+
+                  {/* Intent & Trigger Rule */}
+                  <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginBottom: '0.65rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                    <div>
+                      <strong style={{ color: 'var(--text-primary)' }}>Intent:</strong> <span style={{ color: 'var(--accent-secondary)' }}>{approval.metadata?.intent || 'order_inquiry'}</span>
+                    </div>
+                    <div>
+                      <strong style={{ color: 'var(--text-primary)' }}>Rule Triggered:</strong> <span style={{ color: '#ffcc00' }}>{approval.reason || approval.rule_triggered || 'Price/Stock verification'}</span>
+                    </div>
+                    {approval.grounding_score > 0 && (
+                      <div>
+                        <strong style={{ color: 'var(--text-primary)' }}>Grounding Score:</strong> <span style={{ color: '#10b981' }}>{(approval.grounding_score * 100).toFixed(0)}%</span>
+                      </div>
+                    )}
                   </div>
-                  <textarea
-                    className="form-input"
-                    style={{ minHeight: '60px', marginBottom: '0.5rem', resize: 'vertical', width: '100%', fontFamily: 'inherit' }}
-                    value={editApprovalText !== '' ? editApprovalText : approval.proposed_response}
-                    onChange={(e) => setEditApprovalText(e.target.value)}
-                  />
-                  <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-                    <button type="button" className="btn btn-secondary" style={{ borderColor: 'var(--accent-primary)', color: 'var(--accent-primary)' }} onClick={() => handleRespondToApproval(approval.id, 'reject')}>Reject (Takeover)</button>
-                    <button type="button" className="btn btn-secondary" onClick={() => handleRespondToApproval(approval.id, 'edit_and_send', editApprovalText || approval.proposed_response)}>✏️ Edit & Send</button>
-                    <button type="button" className="btn btn-primary" onClick={() => handleRespondToApproval(approval.id, 'approve')}>✓ Approve & Send</button>
+
+                  {/* SQL Evidence (Deterministic Price & Stock Grounding) */}
+                  {hasSqlEvidence && (
+                    <div style={{ marginBottom: '0.65rem', background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)', padding: '0.5rem 0.75rem', borderRadius: '4px' }}>
+                      <div style={{ fontSize: '0.7rem', color: '#10b981', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '0.35rem' }}>
+                        Deterministic SQL Evidence (Anti-Hallucination Snapshot)
+                      </div>
+                      <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', fontSize: '0.8rem' }}>
+                        {priceEntries.map(([sku, price]) => (
+                          <div key={sku} style={{ background: 'rgba(0,0,0,0.2)', padding: '0.2rem 0.4rem', borderRadius: '3px' }}>
+                            🏷️ <strong>{sku}</strong>: ₹{price}
+                          </div>
+                        ))}
+                        {stockEntries.map(([sku, stock]) => (
+                          <div key={sku} style={{ background: 'rgba(0,0,0,0.2)', padding: '0.2rem 0.4rem', borderRadius: '3px' }}>
+                            📦 <strong>{sku}</strong>: {stock} units in stock
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* AI Generated Draft */}
+                  <div style={{ marginBottom: '0.35rem' }}>
+                    <label style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.25rem' }}>
+                      Proposed AI Draft (Editable):
+                    </label>
+                    <textarea
+                      className="form-input"
+                      style={{ minHeight: '75px', resize: 'vertical', width: '100%', fontFamily: 'inherit', fontSize: '0.85rem', lineHeight: '1.4' }}
+                      value={editApprovalText !== '' ? editApprovalText : approval.proposed_response}
+                      onChange={(e) => setEditApprovalText(e.target.value)}
+                      placeholder="Review or edit the AI draft response before sending..."
+                    />
+                  </div>
+
+                  {/* Error Feedback */}
+                  {approvalError && (
+                    <div style={{ padding: '0.4rem 0.6rem', background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.35)', color: '#fca5a5', fontSize: '0.8rem', borderRadius: '4px', marginBottom: '0.5rem' }}>
+                      ⚠️ {approvalError}
+                    </div>
+                  )}
+
+                  {/* Action Buttons */}
+                  <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.35rem' }}>
+                    <button 
+                      type="button" 
+                      className="btn btn-secondary" 
+                      style={{ borderColor: 'var(--accent-primary)', color: 'var(--accent-primary)', fontSize: '0.8rem' }} 
+                      disabled={isSubmittingApproval}
+                      onClick={() => handleRespondToApproval(approval.id, 'reject')}
+                      title="Reject AI draft and switch thread to Human Agent takeover"
+                    >
+                      👤 Take Over (Silence AI)
+                    </button>
+                    <button 
+                      type="button" 
+                      className="btn btn-secondary" 
+                      style={{ fontSize: '0.8rem' }}
+                      disabled={isSubmittingApproval}
+                      onClick={() => handleRespondToApproval(approval.id, 'edit_and_send', editApprovalText || approval.proposed_response)}
+                    >
+                      ✏️ Edit & Send
+                    </button>
+                    <button 
+                      type="button" 
+                      className="btn btn-primary" 
+                      style={{ fontSize: '0.8rem' }}
+                      disabled={isSubmittingApproval}
+                      onClick={() => handleRespondToApproval(approval.id, 'approve')}
+                    >
+                      {isSubmittingApproval ? '⏳ Dispatching...' : '✓ Approve & Send'}
+                    </button>
                   </div>
                 </div>
               );

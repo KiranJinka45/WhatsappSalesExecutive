@@ -4,7 +4,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from .database import engine, Base, request_id_var, SessionLocal
-from .routers import auth, catalog, brand, conversations, webhooks, health, analytics, approvals
+from .routers import auth, catalog, brand, conversations, webhooks, health, analytics, approvals, outbox
 from sqlalchemy import text
 from .config import settings
 import logging
@@ -293,6 +293,13 @@ async def lifespan(app: FastAPI):
             print("Started Closely image embedding backfill scan in background.")
         except Exception as e:
             print(f"Failed to start image embedding backfill scan: {e}")
+
+        # Start isolated internal Prometheus metrics server on port 9090
+        try:
+            from .metrics import start_metrics_server
+            start_metrics_server(port=9090)
+        except Exception as metrics_err:
+            print(f"Failed to start internal Prometheus metrics server: {metrics_err}")
         
     yield
     if worker_instance:
@@ -305,6 +312,10 @@ app = FastAPI(
     version="2.0",
     lifespan=lifespan
 )
+
+# Attach Prometheus RED HTTP instrumentation
+from .metrics import setup_fastapi_instrumentation
+setup_fastapi_instrumentation(app)
 
 # Standard Outer CORSMiddleware (Guarantees CORS headers on ALL responses including 401, 403, 500)
 allowed_origins = [
@@ -417,6 +428,7 @@ app.include_router(conversations.router)
 app.include_router(webhooks.router)
 app.include_router(approvals.router)
 app.include_router(approvals.inbox_router)
+app.include_router(outbox.router)
 app.include_router(health.router)
 app.include_router(analytics.router)
 

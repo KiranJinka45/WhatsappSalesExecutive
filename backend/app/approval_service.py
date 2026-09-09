@@ -314,10 +314,9 @@ def transition_approval_state(
                 detail="Emergency kill switch is currently active for this organization. Outbound dispatches are halted."
             )
 
-        # Transition to DISPATCHING before sending to provider
-        approval.status = "DISPATCHING"
-        outbound.status = "DISPATCHING"
-        outbound.attempt_count = (outbound.attempt_count or 0) + 1
+        # Advance state to APPROVED & PENDING outbox
+        approval.status = "APPROVED"
+        outbound.status = "PENDING"
 
         audit_approve = models.ApprovalAuditLog(
             organization_id=org_id,
@@ -326,7 +325,7 @@ def transition_approval_state(
             user_id=user.id,
             action=action_name,
             previous_status=old_status,
-            new_status="DISPATCHING",
+            new_status="APPROVED",
             message_content=final_text,
             message_hash=msg_hash,
             revalidation_passed=True,
@@ -335,141 +334,22 @@ def transition_approval_state(
         db.add(audit_approve)
         db.commit()
         db.refresh(approval)
+        db.refresh(outbound)
 
-        # Dispatch via WhatsApp BSP provider outside open DB transaction
-        send_result = send_whatsapp_message(
-            to_phone=conv.customer_phone,
-            content=final_text,
-            org=org,
-            from_approval=True
-        )
+        # Decoupled Asynchronous Outbox Dispatch
+        from .queue import enqueue_outbox_dispatch
+        enqueue_outbox_dispatch(str(outbound.id))
 
-        if send_result.get("status") in ["sent", "shadow_mode_suppressed"]:
-            provider_wamid = send_result.get("wamid") or send_result.get("message_id") or f"mock_{outbound.id}"
-            outbound.status = "SENT"
-            outbound.provider_message_id = provider_wamid
-            outbound.sent_at = datetime.now(timezone.utc)
+        manager.broadcast(str(org_id), "status_change", {
+            "conversation_id": str(conv.id),
+            "status": conv.status
+        })
+        manager.broadcast(str(org_id), "approval_updated", {
+            "approval_id": str(approval.id),
+            "status": approval.status
+        })
 
-            approval.status = "SENT"
-            approval.sent_at = datetime.now(timezone.utc)
-
-            if pending_msg:
-                pending_msg.status = "sent"
-                pending_msg.content = final_text
-            conv.status = "AI_ACTIVE"
-            db.commit()
-
-            audit_sent = models.ApprovalAuditLog(
-                organization_id=org_id,
-                approval_request_id=approval.id,
-                conversation_id=conv.id,
-                user_id=user.id,
-                action="SENT",
-                previous_status="DISPATCHING",
-                new_status="SENT",
-                message_content=final_text,
-                message_hash=msg_hash,
-                metadata_={"bsp_result": send_result, "provider_message_id": provider_wamid}
-            )
-            db.add(audit_sent)
-            db.commit()
-
-            manager.broadcast(str(org_id), "status_change", {
-                "conversation_id": str(conv.id),
-                "status": conv.status
-            })
-            if pending_msg:
-                manager.broadcast(str(org_id), "new_message", {
-                    "conversation_id": str(conv.id),
-                    "message": {
-                        "id": str(pending_msg.id),
-                        "sender": pending_msg.sender,
-                        "message_type": pending_msg.message_type,
-                        "content": pending_msg.content,
-                        "status": pending_msg.status,
-                        "created_at": pending_msg.created_at.isoformat()
-                    }
-                })
-            manager.broadcast(str(org_id), "approval_updated", {
-                "approval_id": str(approval.id),
-                "status": approval.status
-            })
-
-        elif send_result.get("status") == "unknown_timeout":
-            err_msg = send_result.get("error", "Network timeout calling WhatsApp provider API. Delivery state ambiguous.")
-            outbound.status = "UNKNOWN_PROVIDER_OUTCOME"
-            outbound.last_error = str(err_msg)
-
-            approval.status = "SEND_FAILED"
-            approval.error_message = str(err_msg)
-            if pending_msg:
-                pending_msg.status = "failed"
-                pending_msg.error_message = str(err_msg)
-            conv.status = "HUMAN_TAKEOVER"
-            db.commit()
-
-            audit_timeout = models.ApprovalAuditLog(
-                organization_id=org_id,
-                approval_request_id=approval.id,
-                conversation_id=conv.id,
-                user_id=user.id,
-                action="AMBIGUOUS_PROVIDER_OUTCOME",
-                previous_status="DISPATCHING",
-                new_status="SEND_FAILED",
-                message_content=final_text,
-                message_hash=msg_hash,
-                metadata_={"error": str(err_msg), "bsp_result": send_result, "requires_reconciliation": True}
-            )
-            db.add(audit_timeout)
-            db.commit()
-
-            manager.broadcast(str(org_id), "status_change", {
-                "conversation_id": str(conv.id),
-                "status": conv.status
-            })
-            manager.broadcast(str(org_id), "approval_updated", {
-                "approval_id": str(approval.id),
-                "status": approval.status,
-                "error": str(err_msg)
-            })
-
-        else:
-            err_msg = send_result.get("error", "Failed to dispatch message to WhatsApp BSP")
-            outbound.status = "FAILED"
-            outbound.last_error = str(err_msg)
-
-            approval.status = "SEND_FAILED"
-            approval.error_message = str(err_msg)
-            if pending_msg:
-                pending_msg.status = "failed"
-                pending_msg.error_message = str(err_msg)
-            conv.status = "HUMAN_TAKEOVER"
-            db.commit()
-
-            audit_fail = models.ApprovalAuditLog(
-                organization_id=org_id,
-                approval_request_id=approval.id,
-                conversation_id=conv.id,
-                user_id=user.id,
-                action="SEND_FAILED",
-                previous_status="DISPATCHING",
-                new_status="SEND_FAILED",
-                message_content=final_text,
-                message_hash=msg_hash,
-                metadata_={"error": str(err_msg), "bsp_result": send_result}
-            )
-            db.add(audit_fail)
-            db.commit()
-
-            manager.broadcast(str(org_id), "status_change", {
-                "conversation_id": str(conv.id),
-                "status": conv.status
-            })
-            manager.broadcast(str(org_id), "approval_updated", {
-                "approval_id": str(approval.id),
-                "status": approval.status,
-                "error": str(err_msg)
-            })
+        send_result = {"status": "enqueued", "outbox_id": str(outbound.id)}
 
     elif norm_action in ["reject", "rejected"]:
         approval.status = "REJECTED"
@@ -740,6 +620,10 @@ def approve_draft_atomic(
     db.commit()
     db.refresh(approval)
     db.refresh(outbound)
+
+    # Asynchronously enqueue to outbox worker pool
+    from .queue import enqueue_outbox_dispatch
+    enqueue_outbox_dispatch(str(outbound.id))
 
     # Broadcast websocket update
     try:

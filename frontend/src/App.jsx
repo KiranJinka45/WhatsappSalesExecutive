@@ -11,6 +11,7 @@ const Settings = lazy(() => import('./components/Settings'));
 const Analytics = lazy(() => import('./components/Analytics'));
 const Integrations = lazy(() => import('./components/Integrations'));
 const PublicCatalog = lazy(() => import('./components/PublicCatalog'));
+const ReconciliationQueue = lazy(() => import('./components/ReconciliationQueue'));
 
 // Shimmer Loader for lazy loaded sections
 const LazyShimmer = () => (
@@ -205,6 +206,13 @@ export default function App() {
           >
             🔌 Integrations
           </button>
+          <button
+            className={`btn ${activeTab === 'reconciliation' ? 'btn-primary' : 'btn-secondary'}`}
+            style={styles.navBtn}
+            onClick={() => setActiveTab('reconciliation')}
+          >
+            ⚖️ Outbox Queue
+          </button>
         </nav>
 
         <button className="btn btn-secondary" style={styles.logoutBtn} onClick={handleLogout}>
@@ -217,6 +225,7 @@ export default function App() {
         <Suspense fallback={<LazyShimmer />}>
           {activeTab === 'inbox' && <Conversations token={token} brandPhone={brandPhone} userEmail={currentUserEmail} />}
           {activeTab === 'catalog' && <Catalog token={token} />}
+          {activeTab === 'reconciliation' && <ReconciliationQueue token={token} />}
           {activeTab === 'settings' && <Settings token={token} />}
           {activeTab === 'analytics' && <Analytics token={token} />}
           {activeTab === 'integrations' && <Integrations />}

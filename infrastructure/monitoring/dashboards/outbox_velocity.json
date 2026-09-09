@@ -1,0 +1,88 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": true,
+  "panels": [
+    {
+      "title": "Redis Outbox & Inbound Queue Depth",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "redis_queue_depth{queue_name=\"closely:queue:outbox\"} or redis_key_size{key=\"closely:queue:outbox\"}",
+          "legendFormat": "Outbox Queue Depth (Pending)",
+          "refId": "A"
+        },
+        {
+          "expr": "redis_queue_depth{queue_name=\"closely:queue:inbound\"} or redis_key_size{key=\"closely:queue:inbound\"}",
+          "legendFormat": "Inbound Queue Depth (Backlog)",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 25 }
+        }
+      }
+    },
+    {
+      "title": "Worker Task Execution Duration (p50, p95)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, task_type) (rate(worker_task_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{task_type}} p95 Duration (s)",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, task_type) (rate(worker_task_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{task_type}} p50 Duration (s)",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "title": "Worker Task Throughput (Tasks / sec)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum by (task_type, status) (rate(worker_tasks_processed_total[1m]))",
+          "legendFormat": "{{task_type}} ({{status}})",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Outbox Dispatch Latency vs Queue Lag Correlation",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "redis_queue_depth{queue_name=\"closely:queue:outbox\"}",
+          "legendFormat": "Outbox Queue Lag",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(worker_task_duration_seconds_sum{task_type=\"outbox_dispatch\"}[1m]) / rate(worker_task_duration_seconds_count{task_type=\"outbox_dispatch\"}[1m])",
+          "legendFormat": "Avg Meta API Dispatch Latency (s)",
+          "refId": "B"
+        }
+      ]
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["closely-ai", "redis", "outbox", "worker"],
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Closely AI - Outbox Velocity & Worker Performance",
+  "uid": "closely-outbox-velocity"
+}

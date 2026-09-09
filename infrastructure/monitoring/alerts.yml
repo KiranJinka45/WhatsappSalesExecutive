@@ -1,0 +1,42 @@
+groups:
+  - name: closely_ai_operational_alerts
+    rules:
+      - alert: QueueLagCritical
+        expr: redis_queue_depth{queue_name="closely:queue:outbox"} > 500
+        for: 3m
+        labels:
+          severity: critical
+          team: platform-core
+        annotations:
+          summary: "Redis WhatsApp outbox queue depth exceeded threshold"
+          description: "Outbox queue has {{ $value }} pending messages for > 3m. Worker pool may be stalled or Meta Cloud API throttled."
+
+      - alert: InboundQueueLagWarning
+        expr: redis_queue_depth{queue_name="closely:queue:inbound"} > 250
+        for: 5m
+        labels:
+          severity: warning
+          team: ai-engineering
+        annotations:
+          summary: "Redis inbound message queue accumulating backlog"
+          description: "Inbound customer message queue depth is {{ $value }}. Ingestion rate exceeds worker processing throughput."
+
+      - alert: SSEConnectionStorm
+        expr: (fastapi_active_sse_connections - fastapi_active_sse_connections offset 1m) / (fastapi_active_sse_connections offset 1m) < -0.50 and (fastapi_active_sse_connections offset 1m) > 10
+        for: 1m
+        labels:
+          severity: critical
+          team: frontend-resilience
+        annotations:
+          summary: "Rapid drop in active SSE connections (> 50% in 1 minute)"
+          description: "Active SSE streams dropped from {{ with query \"fastapi_active_sse_connections offset 1m\" }}{{ . | first | value }}{{ end }} to {{ $value }}. Indicates proxy timeout, ALB disconnect, or network partition."
+
+      - alert: WorkerTaskErrorRateHigh
+        expr: sum(rate(worker_tasks_processed_total{status="error"}[5m])) / sum(rate(worker_tasks_processed_total[5m])) > 0.10
+        for: 2m
+        labels:
+          severity: high
+          team: platform-core
+        annotations:
+          summary: "Asynchronous worker task error rate exceeds 10%"
+          description: "Worker task failures represent {{ $value | humanizePercentage }} of all processed tasks over the last 5 minutes."

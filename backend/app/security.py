@@ -134,3 +134,53 @@ def require_role(*allowed_roles: str):
         return current_user
     return role_checker
 
+
+# ============================================================================
+# Sensitive Token Encryption at Rest (Fernet AES-128-CBC)
+# ============================================================================
+import base64
+import hashlib
+from cryptography.fernet import Fernet
+
+def _get_fernet_cipher() -> Fernet:
+    """Derives a deterministic 32-byte Fernet key from the application secret."""
+    raw_key = getattr(settings, "WHATSAPP_TOKEN_ENCRYPTION_KEY", None) or settings.JWT_SECRET or "default_secret_key_32_bytes_long"
+    derived_key = base64.urlsafe_b64encode(hashlib.sha256(raw_key.encode("utf-8")).digest())
+    return Fernet(derived_key)
+
+def encrypt_token(plain_token: Optional[str]) -> Optional[str]:
+    """
+    Encrypts sensitive per-tenant tokens before storing in PostgreSQL.
+    Prefixes cipher with 'enc:' for unambiguous serialization.
+    """
+    if not plain_token:
+        return plain_token
+    if str(plain_token).startswith("enc:"):
+        return plain_token  # Already encrypted
+    try:
+        cipher = _get_fernet_cipher()
+        encrypted_bytes = cipher.encrypt(plain_token.encode("utf-8"))
+        return f"enc:{encrypted_bytes.decode('utf-8')}"
+    except Exception:
+        return plain_token
+
+def decrypt_token(cipher_token: Optional[str]) -> Optional[str]:
+    """
+    Decrypts encrypted token strings from PostgreSQL for runtime API dispatch.
+    Strictly enforces 'enc:' format; unencrypted or corrupted tokens raise ValueError.
+    """
+    if not cipher_token:
+        return None
+    if not str(cipher_token).startswith("enc:"):
+        raise ValueError(
+            "Plaintext token detected. All WhatsApp access tokens must be stored encrypted using encrypt_token()."
+        )
+    try:
+        cipher = _get_fernet_cipher()
+        raw_cipher = cipher_token[4:].encode("utf-8")
+        decrypted_bytes = cipher.decrypt(raw_cipher)
+        return decrypted_bytes.decode("utf-8")
+    except Exception as e:
+        raise ValueError(f"Failed to decrypt WhatsApp access token: {e}") from e
+
+
