@@ -148,16 +148,18 @@ def send_whatsapp_message(
                 err_type = str(err_obj.get("type", ""))
                 err_msg = str(err_obj.get("message", ""))
                 
-                if err_code == 190 or "OAuthException" in err_type or "190" in err_text or "Authentication Error" in err_msg:
+                if err_code == 190 or "Authentication Error" in err_msg or ("190" in err_text and err_code not in (100, 131058)):
                     formatted_error = "Meta System User Access Token has expired or is invalid (OAuth Error 190). Please generate a Permanent System User Access Token in Meta Business Manager (System Users -> Expiration: Never) and paste it into Settings."
                 elif err_code == 131030 or "131030" in err_text:
                     formatted_error = f"Recipient phone number {clean_phone} is not added to your Meta Development App allowed test numbers list."
                 elif err_code == 131009 or "131009" in err_text or "phone_number_id" in err_msg.lower():
                     formatted_error = f"Invalid Meta Phone Number ID '{phone_id}'. Please check your Phone Number ID in Meta Developer Dashboard."
+                elif err_code == 100 or "Invalid parameter" in err_msg or "131058" in err_text:
+                    formatted_error = f"Meta Cloud API: Real WhatsApp Business numbers require an incoming customer message to start a 24-hour conversation session."
                 elif err_msg:
                     formatted_error = f"{err_msg} (Meta Code: {err_code})"
             except Exception:
-                if "190" in err_text or "OAuthException" in err_text:
+                if "190" in err_text:
                     formatted_error = "Meta System User Access Token has expired or is invalid (OAuth Error 190). Please generate a Permanent System User Access Token in Meta Business Manager (System Users -> Expiration: Never) and paste it into Settings."
 
             # Fallback to hello_world template if outside 24h conversation window
