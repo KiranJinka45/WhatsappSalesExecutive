@@ -335,7 +335,7 @@ def test_whatsapp_connection(
             if meta_res.status_code == 200:
                 phone_data = meta_res.json()
                 logger.info(f"Meta Graph Phone Verified: {phone_data.get('display_phone_number')} (verified_name: {phone_data.get('verified_name')})")
-                org.is_whatsapp_connected = True
+                org.is_whatsapp_connected = 1
                 org.whatsapp_onboarding_state = "LIVE_CONNECTED"
                 org.whatsapp_connected_at = datetime.now(timezone.utc)
                 db.commit()
@@ -361,7 +361,7 @@ def test_whatsapp_connection(
             err_msg = res.get("error") or f"Dispatch suppressed by mode '{res.get('status')}'"
             # If the error is standard Meta 24-hour window restriction for outbound freeform text
             if "OAuthException" in str(err_msg) or "100" in str(err_msg) or "131058" in str(err_msg) or "Invalid parameter" in str(err_msg) or "conversation session" in str(err_msg) or "24-hour" in str(err_msg) or "Real WhatsApp" in str(err_msg):
-                org.is_whatsapp_connected = True
+                org.is_whatsapp_connected = 1
                 org.whatsapp_onboarding_state = "LIVE_CONNECTED"
                 db.commit()
                 return {
@@ -378,7 +378,7 @@ def test_whatsapp_connection(
     except Exception as dispatch_err:
         logger.error(f"Test Meta dispatch failed: {dispatch_err}", exc_info=True)
         if "OAuthException" in str(dispatch_err) or "100" in str(dispatch_err):
-            org.is_whatsapp_connected = True
+            org.is_whatsapp_connected = 1
             org.whatsapp_onboarding_state = "LIVE_CONNECTED"
             db.commit()
             return {
