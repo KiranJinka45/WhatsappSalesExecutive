@@ -9,10 +9,25 @@ export default function Auth({ onLoginSuccess, initialMode = 'login', onBackToLa
   const [orgName, setOrgName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [slowLoadNotice, setSlowLoadNotice] = useState(false);
 
   useEffect(() => {
     setIsSignup(initialMode === 'signup');
+    // Eagerly warm up the backend the moment the Auth screen renders
+    apiFetch('/health').catch(() => {});
   }, [initialMode]);
+
+  useEffect(() => {
+    let timer;
+    if (loading) {
+      timer = setTimeout(() => {
+        setSlowLoadNotice(true);
+      }, 3000);
+    } else {
+      setSlowLoadNotice(false);
+    }
+    return () => clearTimeout(timer);
+  }, [loading]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -165,8 +180,26 @@ export default function Auth({ onLoginSuccess, initialMode = 'login', onBackToLa
 
           {error && <div style={styles.error}>{error}</div>}
 
+          {slowLoadNotice && !error && (
+            <div style={{
+              background: 'rgba(24, 119, 242, 0.08)',
+              border: '1px solid rgba(24, 119, 242, 0.25)',
+              borderRadius: '6px',
+              padding: '0.6rem 0.8rem',
+              fontSize: '0.8rem',
+              color: '#60a5fa',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              animation: 'pulse 1.5s infinite ease-in-out'
+            }}>
+              <span>⚡</span>
+              <span>Waking up secure backend server... Almost ready!</span>
+            </div>
+          )}
+
           <button type="submit" className="btn btn-primary" style={styles.button} disabled={loading}>
-            {loading ? 'Processing...' : isSignup ? 'Create Account' : 'Sign In'}
+            {loading ? 'Signing in...' : isSignup ? 'Create Account' : 'Sign In'}
           </button>
         </form>
 

@@ -1,5 +1,16 @@
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://closely-backend.onrender.com';
 
+// Eager non-blocking background wake-up ping for Render cold-starts
+if (typeof window !== 'undefined') {
+  // Fire immediate wake-up ping on page load
+  fetch(`${API_BASE_URL}/health`, { method: 'GET', mode: 'cors' }).catch(() => {});
+  
+  // Keep-alive heartbeat every 4 minutes so backend never spins down while user has tab open
+  setInterval(() => {
+    fetch(`${API_BASE_URL}/health`, { method: 'GET', mode: 'cors' }).catch(() => {});
+  }, 4 * 60 * 1000);
+}
+
 export async function apiFetch(path, options = {}) {
   const url = path.startsWith('http') ? path : `${API_BASE_URL}${path}`;
   
