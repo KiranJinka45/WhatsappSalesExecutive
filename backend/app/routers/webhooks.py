@@ -33,7 +33,7 @@ def verify_whatsapp_handshake(
     hub_verify_token: str = Query(None, alias="hub.verify_token")
 ):
     """
-    Standard Meta Webhook validation handshake.
+    Standard Meta Webhook validation handshake for WhatsApp.
     """
     logger.info(f"Webhook handshake received: mode={hub_mode}, verify_token={hub_verify_token}, challenge={hub_challenge}")
     if hub_mode == "subscribe" and hub_challenge:
@@ -45,6 +45,27 @@ def verify_whatsapp_handshake(
             logger.warning(f"Webhook verify token mismatch: received {hub_verify_token}, expected {expected_token}")
             raise HTTPException(status_code=403, detail="Verification token mismatch")
     return Response(content="verification_endpoint", media_type="text/plain")
+
+
+@router.get("/instagram", response_class=Response, responses={403: {"description": "Verification token mismatch"}})
+def verify_instagram_handshake(
+    hub_mode: str = Query(None, alias="hub.mode"),
+    hub_challenge: str = Query(None, alias="hub.challenge"),
+    hub_verify_token: str = Query(None, alias="hub.verify_token")
+):
+    """
+    Standard Meta Webhook validation handshake for Instagram.
+    """
+    logger.info(f"Instagram webhook handshake received: mode={hub_mode}, verify_token={hub_verify_token}, challenge={hub_challenge}")
+    if hub_mode == "subscribe" and hub_challenge:
+        expected_token = getattr(settings, "IG_WEBHOOK_VERIFY_TOKEN", None) or settings.WHATSAPP_VERIFY_TOKEN or "closely_verify_token"
+        if hub_verify_token == expected_token:
+            logger.info("Instagram webhook handshake verification successful.")
+            return Response(content=str(hub_challenge), media_type="text/plain")
+        else:
+            logger.warning(f"Instagram webhook verify token mismatch: received {hub_verify_token}, expected {expected_token}")
+            raise HTTPException(status_code=403, detail="Verification token mismatch")
+    return Response(content="instagram_verification_endpoint", media_type="text/plain")
 
 def process_message_async(
     org_id: str,
@@ -166,8 +187,13 @@ def process_message_async(
                             "created_at": err_msg.created_at.isoformat()
                         }
                     })
-                    from ..bsp_service import send_whatsapp_message
-                    send_whatsapp_message(conv.customer_phone, error_reply, org)
+                    from ..services.channel_dispatcher import dispatch_channel_message
+                    dispatch_channel_message(
+                        org=org,
+                        channel=getattr(conv, "channel", "whatsapp"),
+                        recipient_id=conv.customer_phone,
+                        text=error_reply
+                    )
                     db.close()
                     tenant_var.reset(token)
                     return
@@ -299,8 +325,13 @@ def process_message_async(
                                     
                                     # Send visual honesty message
                                     honesty_reply = "We don't have this exact saree design in our catalog right now, but here are some similar available designs you might like!"
-                                    from ..bsp_service import send_whatsapp_message
-                                    send_whatsapp_message(conv.customer_phone, honesty_reply, org)
+                                    from ..services.channel_dispatcher import dispatch_channel_message
+                                    dispatch_channel_message(
+                                        org=org,
+                                        channel=getattr(conv, "channel", "whatsapp"),
+                                        recipient_id=conv.customer_phone,
+                                        text=honesty_reply
+                                    )
                                     
                                     honesty_msg = models.Message(
                                         conversation_id=conv.id,
@@ -382,8 +413,13 @@ def process_message_async(
                                 "created_at": ai_msg.created_at.isoformat()
                             }
                         })
-                        from ..bsp_service import send_whatsapp_message
-                        send_whatsapp_message(conv.customer_phone, ai_reply, org)
+                        from ..services.channel_dispatcher import dispatch_channel_message
+                        dispatch_channel_message(
+                            org=org,
+                            channel=getattr(conv, "channel", "whatsapp"),
+                            recipient_id=conv.customer_phone,
+                            text=ai_reply
+                        )
                         db.close()
                         tenant_var.reset(token)
                         return
@@ -460,22 +496,51 @@ def process_message_async(
                             "created_at": ai_msg.created_at.isoformat()
                         }
                     })
-                    from ..bsp_service import send_whatsapp_message
-                    send_whatsapp_message(conv.customer_phone, ai_reply, org)
+                    from ..services.channel_dispatcher import dispatch_channel_message
+                    dispatch_channel_message(
+                        org=org,
+                        channel=getattr(conv, "channel", "whatsapp"),
+                        recipient_id=conv.customer_phone,
+                        text=ai_reply
+                    )
                     db.close()
                     tenant_var.reset(token)
                     return
 
                 elif 1 <= len(matches) <= 6:
-                    # 1-6 matches: Send each product as a separate WhatsApp image message
-                    from ..bsp_service import send_whatsapp_message
+                    from ..services.channel_dispatcher import dispatch_channel_message
                     from ..connection_manager import manager
-                    for idx, p in enumerate(matches):
+
+                    # If Instagram channel, send interactive carousel cards
+                    if getattr(conv, "channel", "whatsapp") == "instagram":
+                        prod_dicts = [{
+                            "title": p.name,
+                            "subtitle": f"₹{int(p.price)} • {p.fabric or 'Premium'}",
+                            "image_url": p.image_urls[0] if p.image_urls and len(p.image_urls) > 0 else None
+                        } for p in matches]
+                        dispatch_channel_message(
+                            org=org,
+                            channel="instagram",
+                            recipient_id=conv.customer_phone,
+                            text="",
+                            products=prod_dicts
+                        )
+                    else:
+                        for idx, p in enumerate(matches):
+                            img_url = p.image_urls[0] if p.image_urls and len(p.image_urls) > 0 else "https://via.placeholder.com/300"
+                            caption = f"{p.name} — ₹{int(p.price)}"
+                            dispatch_channel_message(
+                                org=org,
+                                channel="whatsapp",
+                                recipient_id=conv.customer_phone,
+                                text=caption,
+                                media_url=img_url
+                            )
+                            time.sleep(0.2)
+                    
+                    for p in matches:
                         img_url = p.image_urls[0] if p.image_urls and len(p.image_urls) > 0 else "https://via.placeholder.com/300"
                         caption = f"{p.name} — ₹{int(p.price)}"
-                        
-                        send_whatsapp_message(conv.customer_phone, caption, org, media_url=img_url)
-                        
                         db_msg = models.Message(
                             conversation_id=conv.id,
                             sender="ai",
@@ -486,23 +551,8 @@ def process_message_async(
                             metadata_={"sku": p.sku, "price": float(p.price), "intent": intent}
                         )
                         db.add(db_msg)
-                        db.commit()
-                        db.refresh(db_msg)
+                    db.commit()
 
-                        manager.broadcast(str(org_uuid), "new_message", {
-                            "conversation_id": str(conv.id),
-                            "message": {
-                                "id": str(db_msg.id),
-                                "sender": db_msg.sender,
-                                "message_type": db_msg.message_type,
-                                "content": db_msg.content,
-                                "media_url": db_msg.media_url,
-                                "status": "sent",
-                                "created_at": db_msg.created_at.isoformat()
-                            }
-                        })
-                        time.sleep(0.2)
-                    
                     db.close()
                     tenant_var.reset(token)
                     return
@@ -863,13 +913,18 @@ def process_message_async(
                         "created_at": ai_msg.created_at.isoformat()
                     }
                 })
-                # Send human-escalation WhatsApp message to customer so they are not left in silence
-                from ..bsp_service import send_whatsapp_message
+                # Send human-escalation message to customer so they are not left in silence
+                from ..services.channel_dispatcher import dispatch_channel_message
                 escalation_text = "I'm connecting you with a store manager. They will get back to you shortly."
                 try:
-                    send_whatsapp_message(conv.customer_phone, escalation_text, org)
-                except Exception as whatsapp_err:
-                    logger.error(f"Failed to send human-escalation WhatsApp message on approval hold: {whatsapp_err}")
+                    dispatch_channel_message(
+                        org=org,
+                        channel=getattr(conv, "channel", "whatsapp"),
+                        recipient_id=conv.customer_phone,
+                        text=escalation_text
+                    )
+                except Exception as dispatch_err:
+                    logger.error(f"Failed to send human-escalation message on approval hold: {dispatch_err}")
 
                 db.close()
                 tenant_var.reset(token)
@@ -888,6 +943,7 @@ def process_message_async(
                 "message": {
                     "id": str(ai_msg.id),
                     "sender": ai_msg.sender,
+                    "channel": getattr(conv, "channel", "whatsapp"),
                     "message_type": ai_msg.message_type,
                     "content": ai_msg.content,
                     "status": ai_msg.status,
@@ -896,20 +952,25 @@ def process_message_async(
                 }
             })
             
-            # Trigger real outbound BSP API payload dispatch with up to 3 retry attempts
-            from ..bsp_service import send_whatsapp_message
-            send_whatsapp_res = {"status": "failed", "error": "Not started"}
+            # Trigger real outbound message dispatch with up to 3 retry attempts
+            from ..services.channel_dispatcher import dispatch_channel_message
+            dispatch_res = {"status": "failed", "error": "Not started"}
             for out_attempt in range(3):
-                send_whatsapp_res = send_whatsapp_message(conv.customer_phone, ai_reply, org)
-                if send_whatsapp_res.get("status") != "failed":
+                dispatch_res = dispatch_channel_message(
+                    org=org,
+                    channel=getattr(conv, "channel", "whatsapp"),
+                    recipient_id=conv.customer_phone,
+                    text=ai_reply
+                )
+                if dispatch_res.get("status") != "failed":
                     break
                 if out_attempt < 2:
                     time.sleep(0.5 * (2 ** out_attempt))
             
-            if send_whatsapp_res.get("status") == "failed":
-                logger.warning(f"Outbound Meta WhatsApp BSP delivery skipped/failed: {send_whatsapp_res.get('error')}. Reply preserved in AI_ACTIVE mode for dashboard.")
+            if dispatch_res.get("status") == "failed":
+                logger.warning(f"Outbound delivery skipped/failed: {dispatch_res.get('error')}. Reply preserved in AI_ACTIVE mode for dashboard.")
             else:
-                logger.info(f"Generated and sent reply: '{ai_reply}' for customer: {conv.customer_phone}")
+                logger.info(f"Generated and sent reply via {getattr(conv, 'channel', 'whatsapp')}: '{ai_reply}' for customer: {conv.customer_phone}")
             
             # Always preserve AI_ACTIVE status and mark message as sent for live dashboard
             conv.status = "AI_ACTIVE"
@@ -1352,6 +1413,135 @@ async def receive_whatsapp_message(
 
     # Return 200 OK immediately to Meta
     return {"status": "processing"}
+
+
+@router.post("/instagram")
+async def receive_instagram_message(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    x_hub_signature_256: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Receives incoming Instagram Direct Message (DM) webhook payloads from Meta.
+    Verifies HMAC-SHA256 signature, parses messages/attachments, creates/updates
+    Instagram conversations, and delegates AI reasoning to background tasks.
+    """
+    payload_bytes = await request.body()
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+
+    # Signature verification
+    app_secret = getattr(settings, "META_APP_SECRET", None) or settings.WHATSAPP_APP_SECRET
+    if app_secret and not settings.TESTING and settings.APP_ENV != "development":
+        if not x_hub_signature_256 or not verify_meta_signature(payload_bytes, x_hub_signature_256, app_secret):
+            raise HTTPException(status_code=403, detail="Invalid or missing signature")
+
+    logger.info(f"Incoming Instagram webhook payload: {body}")
+
+    for entry in body.get("entry", []):
+        ig_business_id = str(entry.get("id") or "")
+        for event in entry.get("messaging", []):
+            sender_id = str(event.get("sender", {}).get("id") or "")
+            recipient_id = str(event.get("recipient", {}).get("id") or "")
+            if not sender_id:
+                continue
+
+            # Ignore echoes of our own sent messages, delivery receipts, or read receipts
+            if event.get("message", {}).get("is_echo") or "delivery" in event or "read" in event:
+                continue
+
+            # Look up organization by instagram_business_account_id or instagram_page_id
+            org = db.query(models.Organization).filter(
+                (models.Organization.instagram_business_account_id == ig_business_id) |
+                (models.Organization.instagram_page_id == ig_business_id) |
+                (models.Organization.instagram_business_account_id == recipient_id) |
+                (models.Organization.instagram_page_id == recipient_id)
+            ).first()
+
+            if not org or not org.is_instagram_connected:
+                logger.warning(f"No connected organization found for Instagram recipient {ig_business_id} / {recipient_id}")
+                continue
+
+            message_data = event.get("message", {})
+            text_content = message_data.get("text", "")
+            attachments = message_data.get("attachments", [])
+            msg_type = "text"
+            media_url = None
+
+            if attachments:
+                att = attachments[0]
+                att_type = att.get("type", "image")
+                if att_type in ("image", "video", "audio"):
+                    msg_type = att_type
+                    media_url = att.get("payload", {}).get("url")
+
+            if not text_content and not media_url:
+                continue
+
+            # Find or create Conversation scoped by channel="instagram"
+            conv = db.query(models.Conversation).filter(
+                models.Conversation.organization_id == org.id,
+                models.Conversation.customer_phone == sender_id,
+                models.Conversation.channel == "instagram"
+            ).first()
+
+            if not conv:
+                conv = models.Conversation(
+                    organization_id=org.id,
+                    customer_phone=sender_id,
+                    customer_name=f"Instagram User ({sender_id[-4:] if len(sender_id) >= 4 else sender_id})",
+                    channel="instagram",
+                    status="AI_ACTIVE"
+                )
+                db.add(conv)
+                db.commit()
+                db.refresh(conv)
+
+            # Record customer inbound message
+            customer_msg = models.Message(
+                conversation_id=conv.id,
+                sender="customer",
+                channel="instagram",
+                message_type=msg_type,
+                content=text_content or f"[{msg_type.capitalize()} Attachment]",
+                media_url=media_url,
+                status="sent"
+            )
+            db.add(customer_msg)
+            db.commit()
+            db.refresh(customer_msg)
+
+            # Broadcast to Closely dashboard via WebSocket
+            from ..connection_manager import manager
+            manager.broadcast(str(org.id), "new_message", {
+                "conversation_id": str(conv.id),
+                "message": {
+                    "id": str(customer_msg.id),
+                    "sender": customer_msg.sender,
+                    "channel": "instagram",
+                    "message_type": customer_msg.message_type,
+                    "content": customer_msg.content,
+                    "media_url": customer_msg.media_url,
+                    "status": "sent",
+                    "created_at": customer_msg.created_at.isoformat()
+                }
+            })
+
+            # Queue AI response processing
+            background_tasks.add_task(
+                process_message_async,
+                str(org.id),
+                str(conv.id),
+                text_content or "",
+                msg_type=msg_type,
+                media_id=None,
+                mime_type=None
+            )
+
+    return Response(status_code=200)
 
 
 class SimulatedPayload(BaseModel):

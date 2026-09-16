@@ -614,6 +614,142 @@ def activate_whatsapp_live_number(
     return res
 
 
+# ============================================================================
+# Instagram Integration Endpoints
+# ============================================================================
+
+class InstagramConfigRequest(BaseModel):
+    page_id: str
+    access_token: str
+    instagram_business_account_id: Optional[str] = None
+
+
+class TestInstagramRequest(BaseModel):
+    page_id: Optional[str] = None
+    access_token: Optional[str] = None
+
+
+@router.get("/instagram/health")
+def get_instagram_health(
+    org: models.Organization = Depends(security.get_current_org),
+    current_user: models.User = Depends(security.get_current_user)
+):
+    """
+    Checks tenant Instagram integration health and configuration status.
+    """
+    return {
+        "is_connected": bool(org.is_instagram_connected),
+        "instagram_business_account_id": org.instagram_business_account_id,
+        "instagram_page_id": org.instagram_page_id,
+        "token_configured": bool(org.instagram_access_token)
+    }
+
+
+@router.post("/instagram/config")
+async def save_instagram_config(
+    payload: InstagramConfigRequest,
+    db: Session = Depends(get_db),
+    org: models.Organization = Depends(security.get_current_org),
+    current_user: models.User = Depends(security.require_role("owner"))
+):
+    """
+    Encrypts and persists Instagram Page ID and Page Access Token.
+    Queries Meta Graph API to automatically discover the linked Instagram Business Account ID.
+    """
+    from ..security import encrypt_token
+    
+    clean_page_id = payload.page_id.strip()
+    clean_token = payload.access_token.strip()
+    
+    ig_account_id = payload.instagram_business_account_id
+    ig_username = None
+    
+    api_ver = getattr(settings, "META_API_VERSION", "v21.0")
+    
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        page_url = f"https://graph.facebook.com/{api_ver}/{clean_page_id}"
+        resp = await client.get(
+            page_url, 
+            params={"fields": "name,instagram_business_account{id,username,name}", "access_token": clean_token}
+        )
+        
+        if resp.status_code != 200:
+            err_data = resp.json().get("error", {}) if resp.content else {}
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=err_data.get("message", "Invalid Facebook Page ID or Page Access Token.")
+            )
+        
+        page_data = resp.json()
+        ig_obj = page_data.get("instagram_business_account")
+        if ig_obj:
+            ig_account_id = ig_obj.get("id")
+            ig_username = ig_obj.get("username")
+        elif not ig_account_id:
+            # If not explicitly linked in Graph API response, check if page_id itself is accessible
+            logger.warning(f"No instagram_business_account linked to Page {clean_page_id}")
+
+    org.instagram_page_id = clean_page_id
+    org.instagram_access_token = encrypt_token(clean_token)
+    if ig_account_id:
+        org.instagram_business_account_id = str(ig_account_id)
+    org.is_instagram_connected = True
+    
+    db.commit()
+    db.refresh(org)
+    
+    return {
+        "status": "success",
+        "message": f"Connected to Instagram{' @' + ig_username if ig_username else ''}!",
+        "instagram_business_account_id": ig_account_id,
+        "instagram_username": ig_username,
+        "is_instagram_connected": True
+    }
+
+
+@router.post("/instagram/test-connection")
+async def test_instagram_connection(
+    payload: Optional[TestInstagramRequest] = None,
+    db: Session = Depends(get_db),
+    org: models.Organization = Depends(security.get_current_org),
+    current_user: models.User = Depends(security.get_current_user)
+):
+    """
+    Authoritatively checks Instagram connection health against Meta Graph API.
+    Zero secrets exposed to the browser.
+    """
+    from ..security import decrypt_token
+    
+    token = payload.access_token if (payload and payload.access_token) else None
+    if not token and org.instagram_access_token:
+        try:
+            token = decrypt_token(org.instagram_access_token)
+        except Exception:
+            token = org.instagram_access_token
+        
+    page_id = (payload and payload.page_id) or org.instagram_page_id
+    
+    if not token or not page_id:
+        return {"ok": False, "error": "Instagram credentials not configured"}
+        
+    api_ver = getattr(settings, "META_API_VERSION", "v21.0")
+    
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(
+            f"https://graph.facebook.com/{api_ver}/{page_id}",
+            params={"fields": "name,instagram_business_account{id,username,name}", "access_token": token}
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            ig_obj = data.get("instagram_business_account", {})
+            username = ig_obj.get("username") or data.get("name") or "Instagram Account"
+            return {"ok": True, "username": username, "ig_account_id": ig_obj.get("id")}
+        else:
+            err_data = resp.json().get("error", {}) if resp.content else {}
+            return {"ok": False, "error": err_data.get("message", "Failed to connect to Meta Graph API")}
+
+
+
 
 
 

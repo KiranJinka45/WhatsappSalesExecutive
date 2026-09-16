@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { apiFetch } from '../api';
 import { launchEmbeddedSignup } from '../utils/metaEmbeddedSignup';
+import InstagramSettingsCard from './InstagramSettingsCard';
 
 export default function Settings({ token }) {
   const [name, setName] = useState('');
@@ -559,6 +560,8 @@ export default function Settings({ token }) {
               </div>
             )}
           </div>
+
+          <InstagramSettingsCard />
 
           <div style={styles.sectionTitle}>2. Brand Profile Details</div>
           

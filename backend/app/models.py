@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, Text, Numeric, Integer, ForeignKey, DateTime, Index, UniqueConstraint, Boolean
+from sqlalchemy import Column, String, Text, Numeric, Integer, ForeignKey, DateTime, Index, UniqueConstraint, Boolean, text
 from sqlalchemy.dialects.postgresql import UUID, ARRAY, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -22,6 +22,10 @@ class Organization(Base):
     whatsapp_onboarding_metadata = Column(JSONB, default=dict)
     whatsapp_connected_at = Column(DateTime(timezone=True), nullable=True)
     whatsapp_token_expires_at = Column(DateTime(timezone=True), nullable=True)
+    instagram_business_account_id = Column(String(64), nullable=True, unique=True, index=True)
+    instagram_page_id = Column(String(64), nullable=True)
+    instagram_access_token = Column(Text, nullable=True)
+    is_instagram_connected = Column(Boolean, default=False, server_default=text("false"))
     policies = Column(JSONB, default=dict)  # shipping, return, exchange, general FAQs
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -101,8 +105,9 @@ class Conversation(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False)
-    customer_phone = Column(String(20), nullable=False, index=True)
+    customer_phone = Column(String(64), nullable=False, index=True)
     customer_name = Column(String(255), nullable=True)
+    channel = Column(String(20), default="whatsapp", server_default="whatsapp", index=True)
     status = Column(String(50), default="AI_ACTIVE", index=True)  # 'AI_ACTIVE', 'WAITING_APPROVAL', 'HUMAN_TAKEOVER', 'CLOSED'
     assigned_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     metadata_ = Column("metadata", JSONB, default=dict)  # states budget, size/color pref, etc.
@@ -126,6 +131,7 @@ class Message(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     conversation_id = Column(UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
     sender = Column(String(50), nullable=False)  # 'customer', 'ai', 'human'
+    channel = Column(String(20), default="whatsapp", server_default="whatsapp")
     message_type = Column(String(50), default="text")  # 'text', 'image', 'video', 'interactive'
     content = Column(Text, nullable=False)
     media_url = Column(Text, nullable=True)
