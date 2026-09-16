@@ -139,6 +139,22 @@ def send_whatsapp_message(
             err_text = response.text
             logger.warning(f"WhatsApp Cloud API dispatch error status {response.status_code}: {err_text}")
             
+            # Auto-register phone number with Cloud API if not yet registered (Error 133010)
+            if "133010" in err_text:
+                try:
+                    logger.info(f"Phone Number {phone_id} requires Cloud API registration (133010). Auto-registering...")
+                    reg_url = f"{settings.WHATSAPP_API_BASE_URL}/{settings.META_API_VERSION}/{phone_id}/register"
+                    reg_resp = httpx.post(reg_url, json={"messaging_product": "whatsapp", "pin": "123456"}, headers=headers, timeout=15.0)
+                    if reg_resp.status_code == 200:
+                        logger.info(f"Auto-registration succeeded for Phone ID {phone_id}. Retrying message dispatch...")
+                        retry_resp = httpx.post(url, json=payload, headers=headers, timeout=10.0)
+                        if retry_resp.status_code == 200:
+                            retry_data = retry_resp.json()
+                            msg_id = retry_data.get("messages", [{}])[0].get("id")
+                            return {"status": "sent", "message_id": msg_id, "mock": False}
+                except Exception as reg_err:
+                    logger.warning(f"Auto-registration attempt failed: {reg_err}")
+
             # Format clean, human-readable error messages for known Meta API codes
             formatted_error = err_text
             try:
@@ -150,6 +166,8 @@ def send_whatsapp_message(
                 
                 if err_code == 190 or "Authentication Error" in err_msg or ("190" in err_text and err_code not in (100, 131058)):
                     formatted_error = "Meta System User Access Token has expired or is invalid (OAuth Error 190). Please generate a Permanent System User Access Token in Meta Business Manager (System Users -> Expiration: Never) and paste it into Settings."
+                elif err_code == 133010 or "133010" in err_text:
+                    formatted_error = f"Meta Cloud API Phone ID {phone_id} has now been registered. Please send a message from WhatsApp to start."
                 elif err_code == 131030 or "131030" in err_text:
                     formatted_error = f"Recipient phone number {clean_phone} is not added to your Meta Development App allowed test numbers list."
                 elif err_code == 131009 or "131009" in err_text or "phone_number_id" in err_msg.lower():

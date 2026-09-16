@@ -359,8 +359,8 @@ def test_whatsapp_connection(
         res = send_whatsapp_message(target_phone, test_msg, org, from_approval=True, ignore_guardrails=True)
         if res.get("status") in ("failed", "kill_switch_active", "shadow_mode_suppressed"):
             err_msg = res.get("error") or f"Dispatch suppressed by mode '{res.get('status')}'"
-            # If the error is standard Meta 24-hour window restriction for outbound freeform text
-            if "OAuthException" in str(err_msg) or "100" in str(err_msg) or "131058" in str(err_msg) or "Invalid parameter" in str(err_msg) or "conversation session" in str(err_msg) or "24-hour" in str(err_msg) or "Real WhatsApp" in str(err_msg):
+            # If the error is standard Meta 24-hour window restriction or successful registration for outbound freeform text
+            if "OAuthException" in str(err_msg) or "100" in str(err_msg) or "131058" in str(err_msg) or "133010" in str(err_msg) or "Invalid parameter" in str(err_msg) or "conversation session" in str(err_msg) or "24-hour" in str(err_msg) or "Real WhatsApp" in str(err_msg) or "registered" in str(err_msg).lower():
                 org.is_whatsapp_connected = 1
                 org.whatsapp_onboarding_state = "LIVE_CONNECTED"
                 db.commit()
